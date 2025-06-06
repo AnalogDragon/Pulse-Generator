@@ -4071,7 +4071,7 @@
 				)
 			)
 		)
-		(property "Value" "5K1"
+		(property "Value" "5.1K"
 			(at 137.16 116.84 90)
 			(effects
 				(font
@@ -5600,10 +5600,9 @@
 		(in_bom yes)
 		(on_board yes)
 		(dnp no)
-		(fields_autoplaced yes)
 		(uuid "9e85d85c-3abe-4e21-abfc-37c12bbf1de4")
 		(property "Reference" "U3"
-			(at 107.315 67.31 0)
+			(at 107.442 68.326 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -5611,7 +5610,7 @@
 			)
 		)
 		(property "Value" "SGM3204"
-			(at 107.315 69.85 0)
+			(at 107.442 70.866 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -6160,7 +6159,7 @@
 				)
 			)
 		)
-		(property "Value" "5K1"
+		(property "Value" "5.1K"
 			(at 137.16 114.3 90)
 			(effects
 				(font
@@ -6427,7 +6426,7 @@
 				)
 			)
 		)
-		(property "Value" "TX4310"
+		(property "Value" "TX4310B"
 			(at 78.105 27.94 0)
 			(effects
 				(font

@@ -3,8 +3,8 @@
  * Auto generated Run-Time-Environment Configuration File
  *      *** Do not modify ! ***
  *
- * Project: 'pulser' 
- * Target:  'pulser' 
+ * Project: 'PulseGenerator' 
+ * Target:  'PulseGenerator' 
  */
 
 #ifndef RTE_COMPONENTS_H

@@ -2126,7 +2126,7 @@
 				)
 			)
 		)
-		(property "Value" "10K"
+		(property "Value" "330R"
 			(at 48.26 30.48 90)
 			(effects
 				(font
@@ -2194,7 +2194,7 @@
 				)
 			)
 		)
-		(property "Value" "SW_Push"
+		(property "Value" "6*6*5 100g"
 			(at 48.26 101.6 0)
 			(effects
 				(font
@@ -2202,7 +2202,7 @@
 				)
 			)
 		)
-		(property "Footprint" "Button_Switch_SMD:SW_SPST_PTS647_Sx38"
+		(property "Footprint" "Button_Switch_SMD:SW_SPST_PTS645"
 			(at 48.26 101.6 0)
 			(effects
 				(font
@@ -2262,7 +2262,7 @@
 				)
 			)
 		)
-		(property "Value" "SW_Push"
+		(property "Value" "6*6*5 100g"
 			(at 48.26 114.3 0)
 			(effects
 				(font
@@ -2270,7 +2270,7 @@
 				)
 			)
 		)
-		(property "Footprint" "Button_Switch_SMD:SW_SPST_PTS647_Sx38"
+		(property "Footprint" "Button_Switch_SMD:SW_SPST_PTS645"
 			(at 48.26 114.3 0)
 			(effects
 				(font
@@ -2329,7 +2329,7 @@
 				)
 			)
 		)
-		(property "Value" "10K"
+		(property "Value" "330R"
 			(at 48.26 58.42 90)
 			(effects
 				(font
@@ -2396,7 +2396,7 @@
 				)
 			)
 		)
-		(property "Value" "10K"
+		(property "Value" "330R"
 			(at 48.26 40.64 90)
 			(effects
 				(font
@@ -2463,7 +2463,7 @@
 				)
 			)
 		)
-		(property "Value" "10K"
+		(property "Value" "330R"
 			(at 48.26 63.5 90)
 			(effects
 				(font
@@ -2530,7 +2530,7 @@
 				)
 			)
 		)
-		(property "Value" "10K"
+		(property "Value" "330R"
 			(at 48.26 27.94 90)
 			(effects
 				(font
@@ -2597,7 +2597,7 @@
 				)
 			)
 		)
-		(property "Value" "10K"
+		(property "Value" "330R"
 			(at 48.26 55.88 90)
 			(effects
 				(font
@@ -2665,7 +2665,7 @@
 				)
 			)
 		)
-		(property "Value" "SW_Push"
+		(property "Value" "6*6*5 100g"
 			(at 73.66 101.6 0)
 			(effects
 				(font
@@ -2673,7 +2673,7 @@
 				)
 			)
 		)
-		(property "Footprint" "Button_Switch_SMD:SW_SPST_PTS647_Sx38"
+		(property "Footprint" "Button_Switch_SMD:SW_SPST_PTS645"
 			(at 73.66 101.6 0)
 			(effects
 				(font
@@ -2798,7 +2798,7 @@
 				)
 			)
 		)
-		(property "Value" "10K"
+		(property "Value" "330R"
 			(at 48.26 35.56 90)
 			(effects
 				(font
@@ -2931,7 +2931,7 @@
 				)
 			)
 		)
-		(property "Value" "10K"
+		(property "Value" "330R"
 			(at 48.26 60.96 90)
 			(effects
 				(font
@@ -2999,7 +2999,7 @@
 				)
 			)
 		)
-		(property "Value" "SW_Push"
+		(property "Value" "6*6*5 100g"
 			(at 48.26 127 0)
 			(effects
 				(font
@@ -3007,7 +3007,7 @@
 				)
 			)
 		)
-		(property "Footprint" "Button_Switch_SMD:SW_SPST_PTS647_Sx38"
+		(property "Footprint" "Button_Switch_SMD:SW_SPST_PTS645"
 			(at 48.26 127 0)
 			(effects
 				(font
@@ -3133,7 +3133,7 @@
 				)
 			)
 		)
-		(property "Value" "SW_Push"
+		(property "Value" "6*6*5 100g"
 			(at 48.26 88.9 0)
 			(effects
 				(font
@@ -3141,7 +3141,7 @@
 				)
 			)
 		)
-		(property "Footprint" "Button_Switch_SMD:SW_SPST_PTS647_Sx38"
+		(property "Footprint" "Button_Switch_SMD:SW_SPST_PTS645"
 			(at 48.26 88.9 0)
 			(effects
 				(font
@@ -3267,7 +3267,7 @@
 				)
 			)
 		)
-		(property "Value" "SW_Push"
+		(property "Value" "6*6*5 100g"
 			(at 73.66 88.9 0)
 			(effects
 				(font
@@ -3275,7 +3275,7 @@
 				)
 			)
 		)
-		(property "Footprint" "Button_Switch_SMD:SW_SPST_PTS647_Sx38"
+		(property "Footprint" "Button_Switch_SMD:SW_SPST_PTS645"
 			(at 73.66 88.9 0)
 			(effects
 				(font
@@ -3334,7 +3334,7 @@
 				)
 			)
 		)
-		(property "Value" "10K"
+		(property "Value" "330R"
 			(at 48.26 45.72 90)
 			(effects
 				(font
@@ -3401,7 +3401,7 @@
 				)
 			)
 		)
-		(property "Value" "10K"
+		(property "Value" "330R"
 			(at 48.26 48.26 90)
 			(effects
 				(font
@@ -3468,7 +3468,7 @@
 				)
 			)
 		)
-		(property "Value" "10K"
+		(property "Value" "330R"
 			(at 48.26 50.8 90)
 			(effects
 				(font
@@ -3535,7 +3535,7 @@
 				)
 			)
 		)
-		(property "Value" "10K"
+		(property "Value" "330R"
 			(at 48.26 38.1 90)
 			(effects
 				(font
@@ -3860,7 +3860,7 @@
 				)
 			)
 		)
-		(property "Value" "SW_Push"
+		(property "Value" "6*6*5 100g"
 			(at 73.66 114.3 0)
 			(effects
 				(font
@@ -3868,7 +3868,7 @@
 				)
 			)
 		)
-		(property "Footprint" "Button_Switch_SMD:SW_SPST_PTS647_Sx38"
+		(property "Footprint" "Button_Switch_SMD:SW_SPST_PTS645"
 			(at 73.66 114.3 0)
 			(effects
 				(font
@@ -3927,7 +3927,7 @@
 				)
 			)
 		)
-		(property "Value" "10K"
+		(property "Value" "330R"
 			(at 48.26 43.18 90)
 			(effects
 				(font
@@ -3994,7 +3994,7 @@
 				)
 			)
 		)
-		(property "Value" "10K"
+		(property "Value" "330R"
 			(at 48.26 53.34 90)
 			(effects
 				(font
@@ -4061,7 +4061,7 @@
 				)
 			)
 		)
-		(property "Value" "10K"
+		(property "Value" "330R"
 			(at 48.26 33.02 90)
 			(effects
 				(font
