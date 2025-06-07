@@ -55,7 +55,7 @@
 /* USER CODE END 0 */
 
 /* External variables --------------------------------------------------------*/
-extern ADC_HandleTypeDef hadc1;
+extern DMA_HandleTypeDef hdma_adc1;
 extern TIM_HandleTypeDef htim1;
 extern TIM_HandleTypeDef htim3;
 extern TIM_HandleTypeDef htim14;
@@ -146,17 +146,17 @@ void SysTick_Handler(void)
 /******************************************************************************/
 
 /**
-  * @brief This function handles ADC1 interrupt.
+  * @brief This function handles DMA1 channel 1 interrupt.
   */
-void ADC1_IRQHandler(void)
+void DMA1_Channel1_IRQHandler(void)
 {
-  /* USER CODE BEGIN ADC1_IRQn 0 */
+  /* USER CODE BEGIN DMA1_Channel1_IRQn 0 */
 
-  /* USER CODE END ADC1_IRQn 0 */
-  HAL_ADC_IRQHandler(&hadc1);
-  /* USER CODE BEGIN ADC1_IRQn 1 */
+  /* USER CODE END DMA1_Channel1_IRQn 0 */
+  HAL_DMA_IRQHandler(&hdma_adc1);
+  /* USER CODE BEGIN DMA1_Channel1_IRQn 1 */
 
-  /* USER CODE END ADC1_IRQn 1 */
+  /* USER CODE END DMA1_Channel1_IRQn 1 */
 }
 
 /**
@@ -188,13 +188,20 @@ void TIM3_IRQHandler(void)
 {
   /* USER CODE BEGIN TIM3_IRQn 0 */
 	
-	if(output_mode == MODE_PULSE_GROUP){
-		htim1.Instance->CNT = 0;
-		htim1.Instance->BDTR &= ~TIM_BDTR_MOE;
-		HAL_TIM_PWM_PWMN_Stop(&htim1, TIM_CHANNEL_1);
-	}
+//	if(output_mode == MODE_PULSE_GROUP){
+//        if ((htim1.Instance->CR1 & TIM_CR1_CEN) == 0){
+////            htim1.Instance->CNT = 0;
+////            htim1.Instance->BDTR &= ~TIM_BDTR_MOE;
+//            HAL_TIM_PWM_PWMN_Stop(&htim1, TIM_CHANNEL_1);
+//        }
+//	}
+    
+    if(__HAL_TIM_GET_FLAG(&htim3, TIM_IT_TRIGGER)){
+		if(output_mode == MODE_REPEAT_BURST || output_mode == MODE_SINGEL_BURST)
+        HAL_TIM_PWM_PWMN_Stop(&htim1, TIM_CHANNEL_1);
+    }
 	
-	__HAL_TIM_CLEAR_IT(&htim3, TIM_IT_UPDATE);
+	__HAL_TIM_CLEAR_IT(&htim3, TIM_IT_UPDATE | TIM_IT_TRIGGER);
 	
 	return;
   /* USER CODE END TIM3_IRQn 0 */
@@ -226,17 +233,14 @@ void TIM17_IRQHandler(void)
 {
   /* USER CODE BEGIN TIM17_IRQn 0 */
 	
-	if(output_mode == MODE_ONE_PULSE){
+	if(output_mode == MODE_SINGEL_BURST){
 	}
-	else if(output_mode == MODE_PULSE_GROUP){
-		htim1.Instance->RCR = 99;
-//		HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
-//		HAL_TIMEx_PWMN_Start(&htim1, TIM_CHANNEL_1);
+	else if(output_mode == MODE_REPEAT_BURST){
+		htim1.Instance->RCR = 100-1;
 		HAL_TIM_PWM_PWMN_Start(&htim1, TIM_CHANNEL_1);
+        pulse_group_output = 1;
 	}
 	else{
-//		HAL_TIM_PWM_Start_IT(&htim1, TIM_CHANNEL_1);
-//		HAL_TIMEx_PWMN_Start_IT(&htim1, TIM_CHANNEL_1);
 		HAL_TIM_PWM_PWMN_Start_IT(&htim1, TIM_CHANNEL_1);
 	}
 	__HAL_TIM_CLEAR_IT(&htim17, TIM_IT_UPDATE);

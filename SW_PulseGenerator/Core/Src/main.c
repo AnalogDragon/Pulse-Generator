@@ -23,6 +23,7 @@
 /* USER CODE BEGIN Includes */
 #include <math.h>
 #include <float.h>
+#include <string.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -40,7 +41,8 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
- ADC_HandleTypeDef hadc1;
+ADC_HandleTypeDef hadc1;
+DMA_HandleTypeDef hdma_adc1;
 
 TIM_HandleTypeDef htim1;
 TIM_HandleTypeDef htim3;
@@ -55,6 +57,7 @@ TIM_HandleTypeDef htim17;
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_DMA_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_TIM1_Init(void);
 static void MX_TIM3_Init(void);
@@ -62,6 +65,11 @@ static void MX_TIM16_Init(void);
 static void MX_TIM14_Init(void);
 static void MX_TIM17_Init(void);
 /* USER CODE BEGIN PFP */
+
+void dac_set_volt(uint16_t volt_mv);
+void adc_calc(void);
+void dac_feedback(void);
+
 
 /* USER CODE END PFP */
 
@@ -73,47 +81,43 @@ static void MX_TIM17_Init(void);
 #define htimTIM htim17
 #define htimSTP htim3
 
-#define MODE_NORMAL 		0x00
-#define MODE_ONE_PULSE 		0xAA
-#define MODE_PULSE_GROUP 	0xBB
+
 
 volatile uint8_t output_mode = MODE_NORMAL;
+volatile uint8_t pulse_group_output = 0;
 
-
-#define STOP_PWM {htimPWM.Instance->BDTR &= ~TIM_BDTR_MOE;}
-#define START_PWM {htimPWM.Instance->BDTR |= TIM_BDTR_MOE;}
 
 /**
-  * @brief  ≈‰÷√PWM¬ˆ≥ÂøÌ∂»£®≤ª–ﬁ∏ƒPSC∫ÕARR£©
-  * @param  htim: ∂® ±∆˜æ‰±˙÷∏’Î
-  * @param  Channel: PWMÕ®µ¿£®TIM_CHANNEL_1µ»£©
-  * @param  pulseWidth_ns: ∆⁄Õ˚µƒ¬ˆ≥ÂøÌ∂»£®ƒ…√Î£©
+  * @brief  ÔøΩÔøΩÔøΩÔøΩPWMÔøΩÔøΩÔøΩÔøΩÔøΩ»£ÔøΩÔøΩÔøΩÔøΩﬁ∏ÔøΩPSCÔøΩÔøΩARRÔøΩÔøΩ
+  * @param  htim: ÔøΩÔøΩ ±ÔøΩÔøΩÔøΩÔøΩÔøΩ÷∏ÔøΩÔøΩ
+  * @param  Channel: PWMÕ®ÔøΩÔøΩÔøΩÔøΩTIM_CHANNEL_1ÔøΩ»£ÔøΩ
+  * @param  pulseWidth_ns: ÔøΩÔøΩÔøΩÔøΩÔøΩÔøΩÔøΩÔøΩÔøΩÔøΩÔøΩ»£ÔøΩÔøΩÔøΩÔøΩÎ£©
   * @retval HAL◊¥Ã¨
   */
 HAL_StatusTypeDef TIM_ConfigPulseWidth(TIM_HandleTypeDef *htim, uint32_t Channel, uint32_t pulseWidth_ns)
 {
-    // ªÒ»°µ±«∞∂® ±∆˜≈‰÷√
+    // ÔøΩÔøΩ»°ÔøΩÔøΩ«∞ÔøΩÔøΩ ±ÔøΩÔøΩÔøΩÔøΩÔøΩÔøΩ
     uint32_t psc = htim->Instance->PSC;
     uint32_t arr = htim->Instance->ARR; 
-    uint32_t timerClockFreq = HAL_RCC_GetHCLKFreq(); // ºŸ…Ë π”√APB1∂® ±∆˜£®µ˜’˚∏˘æ› µº «Èøˆ£©
+    uint32_t timerClockFreq = HAL_RCC_GetHCLKFreq(); // ÔøΩÔøΩÔøΩÔøΩ πÔøΩÔøΩAPB1ÔøΩÔøΩ ±ÔøΩÔøΩÔøΩÔøΩÔøΩÔøΩÔøΩÔøΩÔøΩÔøΩÔøΩÔøΩ µÔøΩÔøΩÔøΩÔøΩÔøΩÔøΩÔøΩ
     
-    // º∆À„∂® ±∆˜º∆ ˝÷‹∆⁄ ±º‰£®ƒ…√Î£©
+    // ÔøΩÔøΩÔøΩ„∂® ±ÔøΩÔøΩÔøΩÔøΩÔøΩÔøΩÔøΩÔøΩÔøΩÔøΩ ±ÔøΩ‰£®ÔøΩÔøΩÔøΩÎ£©
     float timerPeriod_ns = (1.0f / (timerClockFreq / (psc + 1))) * 1e9f;
     
-    // º∆À„–Ë“™µƒCCR÷µ
+    // ÔøΩÔøΩÔøΩÔøΩÔøΩÔøΩ“™ÔøΩÔøΩCCR÷µ
     uint32_t ccr = (uint32_t)(pulseWidth_ns / timerPeriod_ns);
     
-    // »∑±£CCR1–°”⁄ARR/2£®∏˘æ›–Ë«Û£©
+    // »∑ÔøΩÔøΩCCR1–°ÔøΩÔøΩARR/2ÔøΩÔøΩÔøΩÔøΩÔøΩÔøΩÔøΩÔøΩÔøΩÔøΩ
     if (ccr > (arr / 2)) {
         ccr = arr / 2;
     }
     
-    // »∑±£CCR÷µ”––ß
+    // »∑ÔøΩÔøΩCCR÷µÔøΩÔøΩ–ß
     if (ccr == 0) {
-        ccr = 1; // ¬ˆ≥ÂøÌ∂»Ã´∂ÃªÚÃ´≥§
+        ccr = 1; // ÔøΩÔøΩÔøΩÔøΩÔøΩÔøΩÃ´ÔøΩÃªÔøΩÃ´ÔøΩÔøΩ
     }
     
-    // ≈‰÷√CCRºƒ¥Ê∆˜
+    // ÔøΩÔøΩÔøΩÔøΩCCRÔøΩƒ¥ÔøΩÔøΩÔøΩ
     switch (Channel) {
         case TIM_CHANNEL_1:
             htim->Instance->CCR1 = ccr;
@@ -135,16 +139,16 @@ HAL_StatusTypeDef TIM_ConfigPulseWidth(TIM_HandleTypeDef *htim, uint32_t Channel
 }
 
 /**
-  * @brief  ≈‰÷√∂® ±∆˜“‘…˙≥…÷∏∂®µƒ∆µ¬ £®÷ß≥÷0.1Hzº∞ŒÛ≤Ó”≈ªØ£©
-  * @param  htim: ∂® ±∆˜æ‰±˙÷∏’Î
-  * @param  desiredFreq: ∆⁄Õ˚…˙≥…µƒ∆µ¬ (Hz) (÷ß≥÷0.1Hzº∞“‘…œ)
+  * @brief  ÔøΩÔøΩÔøΩ√∂ÔøΩ ±ÔøΩÔøΩÔøΩÔøΩÔøΩÔøΩÔøΩÔøΩ÷∏ÔøΩÔøΩÔøΩÔøΩ∆µÔøΩ £ÔøΩ÷ßÔøΩÔøΩ0.1HzÔøΩÔøΩÔøΩÔøΩÔøΩÔøΩ≈ªÔøΩÔøΩÔøΩ
+  * @param  htim: ÔøΩÔøΩ ±ÔøΩÔøΩÔøΩÔøΩÔøΩ÷∏ÔøΩÔøΩ
+  * @param  desiredFreq: ÔøΩÔøΩÔøΩÔøΩÔøΩÔøΩÔøΩ…µÔøΩ∆µÔøΩÔøΩ(Hz) (÷ßÔøΩÔøΩ0.1HzÔøΩÔøΩÔøΩÔøΩÔøΩÔøΩ)
   * @retval HAL◊¥Ã¨
   */
 HAL_StatusTypeDef TIM_ConfigFrequencyOptimized(
                             float desiredFreq, 
                             uint32_t pulseWidth_ns)
 {
-    // ºÏ≤È ‰»Î≤Œ ˝µƒ”––ß–‘
+    // ÔøΩÔøΩÔøΩÔøΩÔøΩÔøΩÔøΩÔøΩÔøΩÔøΩÔøΩÔøΩÔøΩÔøΩ–ßÔøΩÔøΩ
     if (desiredFreq <= 0.0f)
     {
         return HAL_ERROR;
@@ -152,43 +156,43 @@ HAL_StatusTypeDef TIM_ConfigFrequencyOptimized(
 
     uint32_t bestPsc = 0;
     uint32_t bestArr = 0;
-    float minError = FLT_MAX;  // ≥ı ºªØŒ™◊Ó¥Û∏°µ„ ˝
+    float minError = FLT_MAX;  // ÔøΩÔøΩ ºÔøΩÔøΩŒ™ÔøΩÔøΩÛ∏°µÔøΩÔøΩÔøΩ
     float actualFreq = 0.0f;
     uint32_t timerClockFreq = HAL_RCC_GetHCLKFreq();
     
-    // º∆À„¿Ì¬€÷‹∆⁄ ˝
+    // ÔøΩÔøΩÔøΩÔøΩÔøΩÔøΩÔøΩÔøΩÔøΩÔøΩÔøΩÔøΩÔøΩÔøΩ
     float desiredPeriods = (float)timerClockFreq / desiredFreq;
     
-    // À—À˜◊Óº—PSC∫ÕARR◊È∫œ
+    // ÔøΩÔøΩÔøΩÔøΩÔøΩÔøΩÔøΩPSCÔøΩÔøΩARRÔøΩÔøΩÔøΩ
     for (uint32_t psc = 0; psc <= 0xFFFF; psc++)
     {
         uint32_t arr = (uint32_t)(desiredPeriods / (psc + 1)) - 1;
         
-        // »∑±£ARR‘⁄”––ß∑∂Œßƒ⁄
+        // »∑ÔøΩÔøΩARRÔøΩÔøΩÔøΩÔøΩ–ßÔøΩÔøΩŒßÔøΩÔøΩ
         if (arr > 0xFFFF)
             continue;
         
-        // º∆À„ µº ∆µ¬ ∫ÕŒÛ≤Ó
+        // ÔøΩÔøΩÔøΩÔøΩ µÔøΩÔøΩ∆µÔøΩ ∫ÔøΩÔøΩÔøΩÔøΩ
         actualFreq = (float)timerClockFreq / ((psc + 1) * (arr + 1));
         float error = fabsf(actualFreq - desiredFreq);
         
-        // »Áπ˚’“µΩ∏¸æ´»∑µƒ◊È∫œ£¨∏¸–¬◊Óº—÷µ
+        // ÔøΩÔøΩÔøΩÔøΩ“µÔøΩÔøΩÔøΩÔøΩÔøΩ»∑ÔøΩÔøΩÔøΩÔøΩœ£ÔøΩÔøΩÔøΩÔøΩÔøΩÔøΩÔøΩÔøΩ÷µ
         if (error < minError)
         {
             minError = error;
             bestPsc = psc;
             bestArr = arr;
             
-            // »Áπ˚ŒÛ≤Ó“—æ≠∫‹–°£¨Ã·«∞ÕÀ≥ˆ—≠ª∑
-            if (error < (desiredFreq * 0.0001f)) // 0.01%ŒÛ≤Ó
+            // ÔøΩÔøΩÔøΩÔøΩÔøΩÔøΩÔøΩ—æÔøΩÔøΩÔøΩ–°ÔøΩÔøΩÔøΩÔøΩ«∞ÔøΩÀ≥ÔøΩ—≠ÔøΩÔøΩ
+            if (error < (desiredFreq * 0.0001f)) // 0.01%ÔøΩÔøΩÔøΩ
                 break;
         }
     }
     
-    // ºÏ≤È «∑Ò’“µΩ”––ß◊È∫œ
+    // ÔøΩÔøΩÔøΩÔøΩ«∑ÔøΩÔøΩ“µÔøΩÔøΩÔøΩ–ßÔøΩÔøΩÔøΩ
     if (bestArr == 0 && bestPsc == 0 && desiredFreq < ((float)timerClockFreq / (0xFFFFFFFF)))
     {
-        // ¥¶¿Ìº´µÕ∆µ«Èøˆ
+        // ÔøΩÔøΩÔøΩÔøΩÔøΩÔøΩ∆µÔøΩÔøΩÔøΩ
         bestPsc = 0xFFFF;
         bestArr = (uint32_t)((float)timerClockFreq / (desiredFreq * (bestPsc + 1))) - 1;
         
@@ -197,19 +201,23 @@ HAL_StatusTypeDef TIM_ConfigFrequencyOptimized(
     }
     
     
-    // ≈‰÷√∂® ±∆˜
-    HAL_TIM_PWM_Stop(&htimPWM, TIM_CHANNEL_1);
-		HAL_TIMEx_PWMN_Stop(&htimPWM, TIM_CHANNEL_1);
-		
-    HAL_TIM_PWM_Stop_IT(&htimPWM, TIM_CHANNEL_1);
-		HAL_TIMEx_PWMN_Stop_IT(&htimPWM, TIM_CHANNEL_1);
-		
+    // ÔøΩÔøΩÔøΩ√∂ÔøΩ ±ÔøΩÔøΩ
     HAL_TIM_Base_Stop_IT(&htimTIM);
+    HAL_Delay(1);
+    HAL_TIM_PWM_PWMN_Stop(&htimPWM, TIM_CHANNEL_1);
+    HAL_Delay(1);
+    HAL_TIM_PWM_PWMN_Stop_IT(&htimPWM, TIM_CHANNEL_1);
+    HAL_Delay(1);
+    
+    HAL_Delay(50);
+    
+    htimPWM.Instance->CNT = 0;
+    htimTIM.Instance->CNT = 0;
+    
+    HAL_Delay(10);
 		
-//		htimSTP.Instance->CNT = 0;
 		
-		
-		if(output_mode == MODE_ONE_PULSE)
+		if(output_mode == MODE_SINGEL_BURST)
 		{
 				if(bestPsc == 0)
 				{
@@ -217,7 +225,7 @@ HAL_StatusTypeDef TIM_ConfigFrequencyOptimized(
 						{
 								Error_Handler();
 						}
-						//÷ª”√µΩ¡ÀPWM∂® ±∆˜
+						//÷ªÔøΩ√µÔøΩÔøΩÔøΩPWMÔøΩÔøΩ ±ÔøΩÔøΩ
 						__HAL_TIM_SET_PRESCALER(&htimPWM, 0);
 						__HAL_TIM_SET_AUTORELOAD(&htimPWM, bestArr);
 						
@@ -233,17 +241,17 @@ HAL_StatusTypeDef TIM_ConfigFrequencyOptimized(
 					return HAL_ERROR;
 				}
 		}
-		else if(output_mode == MODE_PULSE_GROUP)
+		else if(output_mode == MODE_REPEAT_BURST)
 		{
 				if(bestPsc == 0)
 				{
-						htimPWM.Instance->RCR = 99;
+						htimPWM.Instance->RCR = 100-1;
 						if (HAL_TIM_OnePulse_Init(&htimPWM, TIM_OPMODE_SINGLE) != HAL_OK)
 						{
 								Error_Handler();
 						}
 						
-						//÷ª”√µΩ¡ÀPWM∂® ±∆˜
+						//÷ªÔøΩ√µÔøΩÔøΩÔøΩPWMÔøΩÔøΩ ±ÔøΩÔøΩ
 						__HAL_TIM_SET_PRESCALER(&htimPWM, 0);
 						__HAL_TIM_SET_AUTORELOAD(&htimPWM, bestArr);
 						
@@ -267,20 +275,19 @@ HAL_StatusTypeDef TIM_ConfigFrequencyOptimized(
 				}
 				if(bestPsc == 0)
 				{
-						//÷ª”√µΩ¡ÀPWM∂® ±∆˜
+						//÷ªÔøΩ√µÔøΩÔøΩÔøΩPWMÔøΩÔøΩ ±ÔøΩÔøΩ
 						__HAL_TIM_SET_PRESCALER(&htimPWM, 0);
 						__HAL_TIM_SET_AUTORELOAD(&htimPWM, bestArr);
 						
 						TIM_ConfigPulseWidth(&htimPWM, TIM_CHANNEL_1, pulseWidth_ns);
 						
-						HAL_TIM_PWM_Start(&htimPWM, TIM_CHANNEL_1);
-						HAL_TIMEx_PWMN_Start(&htimPWM, TIM_CHANNEL_1);
+						HAL_TIM_PWM_PWMN_Start(&htimPWM, TIM_CHANNEL_1);
 				}
 				else
 				{
 						__HAL_TIM_SET_PRESCALER(&htimTIM, bestPsc);
 						__HAL_TIM_SET_AUTORELOAD(&htimTIM, bestArr);
-						//÷ª”√µΩ¡ÀPWM∂® ±∆˜
+						//÷ªÔøΩ√µÔøΩÔøΩÔøΩPWMÔøΩÔøΩ ±ÔøΩÔøΩ
 						__HAL_TIM_SET_PRESCALER(&htimPWM, 0);
 						__HAL_TIM_SET_AUTORELOAD(&htimPWM, 60000-1);
 						
@@ -298,38 +305,211 @@ HAL_StatusTypeDef TIM_ConfigFrequencyOptimized(
 }
 
 
-
-
-
-uint16_t g_ram[6] = {0};
-
-
-
-#define ADC_BUFFER_SIZE 32
-#define ADC_CHANNEL_NUM 4
-
-uint16_t adc_buffer[ADC_BUFFER_SIZE][ADC_CHANNEL_NUM] = {0};
-
-
-
-volatile uint8_t current_channel = 0;
-uint16_t adc_values[ADC_CHANNEL_NUM];
-// ADC◊™ªªÕÍ≥…ªÿµ˜∫Ø ˝
-void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
-{
-    // ¥Ê¥¢µ±«∞Õ®µ¿µƒ◊™ªªΩ·π˚
-    adc_values[current_channel++] = HAL_ADC_GetValue(hadc);
-	if(current_channel >= 4)current_channel = 0;
+void output_off(void){
+    dac_set_volt(0);
+    HAL_TIM_Base_Stop_IT(&htimTIM);
+    HAL_Delay(1);
+    HAL_TIM_PWM_PWMN_Stop(&htimPWM, TIM_CHANNEL_1);
+    HAL_Delay(1);
+    HAL_TIM_PWM_PWMN_Stop_IT(&htimPWM, TIM_CHANNEL_1);
+    HAL_Delay(1);
 }
 
 
-void HAL_IncTick(void)
-{
-  uwTick += (uint32_t)uwTickFreq;
+uint16_t g_ram[6] = {0xFFFF,0,0xFFFF,0,0xFFFF,0,};
+const uint16_t disp_output[6] = {DISP_CHAR_O,DISP_CHAR_U,DISP_CHAR_T,DISP_CHAR_P,DISP_CHAR_U,DISP_CHAR_T};
+const uint16_t disp_normal_mode[11] = {DISP_CHAR_N,DISP_CHAR_O,DISP_CHAR_R,DISP_CHAR_M,DISP_CHAR_A,DISP_CHAR_L,0,DISP_CHAR_M,DISP_CHAR_O,DISP_CHAR_D,DISP_CHAR_E};
+const uint16_t disp_singel_burst[12] = {DISP_CHAR_S,DISP_CHAR_I,DISP_CHAR_N,DISP_CHAR_G,DISP_CHAR_E,DISP_CHAR_L,0,DISP_CHAR_B,DISP_CHAR_U,DISP_CHAR_R,DISP_CHAR_S,DISP_CHAR_T};
+const uint16_t disp_repeat_burst[12] = {DISP_CHAR_R,DISP_CHAR_E,DISP_CHAR_P,DISP_CHAR_E,DISP_CHAR_A,DISP_CHAR_T,0,DISP_CHAR_B,DISP_CHAR_U,DISP_CHAR_R,DISP_CHAR_S,DISP_CHAR_T};
+const uint16_t disp_100_CPS[6] ={DISP_NUM_1,DISP_NUM_0,DISP_NUM_0,DISP_CHAR_C,DISP_CHAR_P,DISP_CHAR_S}; 
+const uint16_t disp_100_count[6] ={DISP_NUM_1,DISP_NUM_0,DISP_NUM_0,DISP_CHAR_C,DISP_CHAR_N,DISP_CHAR_T}; 
+
+volatile uint8_t step_str = 0;
+
+//Â¶ÇÊûúËøîÂõû1ÔºåÂàôËØ¥ÊòéÂ∑≤ÁªèÊòæÁ§∫ÂÆåÊàê
+// run in 100ms
+uint8_t disp_str_step(const uint16_t* str,uint8_t len){
+	if(len == 0){
+		memset(g_ram,0,12);
+		if(step_str >= 2){
+			step_str = 0;
+			return 1;
+		}
+	}
+	else if(len<=6){
+		memset(g_ram,0,12);
+		if(step_str <= 15){
+			for(uint8_t i=0;i<len;i++){
+				g_ram[i+6-len] = str[i];
+			}
+		}
+		if(step_str >= 17){
+			step_str = 0;
+			return 1;
+		}
+	}
+	else{
+		memset(g_ram,0,12);
+		if(step_str < 7){
+			for(uint8_t i=0;i<6;i++){
+				g_ram[i] = str[i];
+			}
+		}
+		else if(step_str - 7 < len-6){
+			for(uint8_t i=0;i<6;i++){
+				g_ram[i] = str[step_str - 7+i+1];
+			}
+		}
+		else if(step_str < 7+8+len-6){
+			for(uint8_t i=0;i<6;i++){
+				g_ram[i] = str[len-6+i];
+			}
+		}
+		else if(step_str < 7+8+len-6+2){
+		}
+		else{
+			step_str = 0;
+			return 1;
+		}
+	}
+	step_str++;
+	return 0;
+}
+
+const uint16_t disp_number_table[10] = {DISP_NUM_0,DISP_NUM_1,DISP_NUM_2,DISP_NUM_3,DISP_NUM_4,DISP_NUM_5,DISP_NUM_6,DISP_NUM_7,DISP_NUM_8,DISP_NUM_9};
+
+void disp_num(uint32_t num,uint8_t len,uint8_t pos,uint8_t e10){
+	uint16_t temp[6];
 	
-    // ÷ÿ–¬∆Ù∂Ø◊™ªª
-    HAL_ADC_Start_IT(&hadc1);
+	if(pos >= 6 || e10 >= 6 || len > 6)
+		return;
+	
+	temp[0] = disp_number_table[num/100000%10];
+	temp[1] = disp_number_table[num/10000%10];
+	temp[2] = disp_number_table[num/1000%10];
+	temp[3] = disp_number_table[num/100%10];
+	temp[4] = disp_number_table[num/10%10];
+	temp[5] = disp_number_table[num%10];
+	
+	if(e10)
+		temp[5-e10] |= 0x4000;
+	
+	for(uint8_t i=0;i<len;i++){
+		g_ram[pos+i] = temp[i+6-len];
+	}
 }
+
+void disp_on(void){
+	while(!disp_str_step(disp_normal_mode,sizeof(disp_normal_mode)/2))
+		HAL_Delay(100);
+	
+	g_ram[0] = DISP_CHAR_B;
+	g_ram[1] = DISP_CHAR_A;
+	g_ram[2] = DISP_CHAR_T;
+	g_ram[5] = DISP_CHAR_V;
+	
+	for(uint8_t i=0;i<10;i++){
+		disp_num((uint32_t)((adc_value[BAT_CH]+0.05)*10),2,3,1);
+		HAL_Delay(100);
+	}
+	
+	memset(g_ram,0,12);
+	HAL_Delay(200);
+}
+
+uint8_t need_disp_str = 0;
+uint8_t need_disp_str_changed = 0;
+const uint16_t  *p_disp_str1;
+const uint16_t  *p_disp_str2;
+uint8_t  len_disp_str1;
+uint8_t  len_disp_str2;
+
+
+void disp_task(void){
+	static uint16_t str_timer = 0;
+	if(need_disp_str > 2)need_disp_str = 0;
+	
+	//ÂàáÊç¢Ê®°ÂºèÊó∂ÂÄôÊòæÁ§∫ÁöÑÂ≠óÁ¨¶‰∏≤ÊèêÁ§∫
+	if(need_disp_str){
+		if(need_disp_str_changed){
+			need_disp_str_changed = 0;
+			str_timer = 0;
+			step_str = 0;
+		}
+		if((str_timer % 10) == 0){
+			//ÊòæÁ§∫Â≠óÁ¨¶‰∏≤
+			if(need_disp_str == 2){
+				if(disp_str_step(p_disp_str2,len_disp_str2)){
+					need_disp_str--;
+				}
+			}
+			else if(need_disp_str == 1){
+				if(disp_str_step(p_disp_str1,len_disp_str1)){
+					need_disp_str--;
+				}
+			}
+			else{
+				need_disp_str = 0;
+				str_timer = 0;
+			}
+		}
+		str_timer++;
+		return;
+	}
+	str_timer = 0;
+	
+	
+	
+}
+
+
+void Change_Mode(void){
+    switch(output_mode){
+        case MODE_NORMAL:
+            output_mode = MODE_REPEAT_BURST;
+		
+			need_disp_str_changed = 1;
+			need_disp_str = 2;
+			p_disp_str2 = disp_repeat_burst;
+			len_disp_str2 = sizeof(disp_repeat_burst)/2;
+		
+			p_disp_str1 = disp_100_CPS;
+			len_disp_str1 = sizeof(disp_100_CPS)/2;
+            break;
+		
+        case MODE_REPEAT_BURST:
+            output_mode = MODE_SINGEL_BURST;
+		
+			need_disp_str_changed = 1;
+			need_disp_str = 2;
+			p_disp_str2 = disp_singel_burst;
+			len_disp_str2 = sizeof(disp_singel_burst)/2;
+		
+			p_disp_str1 = disp_100_count;
+			len_disp_str1 = sizeof(disp_100_count)/2;
+            break;
+		
+        case MODE_SINGEL_BURST:
+        default:
+            output_mode = MODE_NORMAL;
+		
+		
+			need_disp_str_changed = 1;
+			need_disp_str = 1;
+		
+			p_disp_str1 = disp_normal_mode;
+			len_disp_str1 = sizeof(disp_normal_mode)/2;
+            break;
+    }
+}
+
+
+void HID_Task(void){
+    
+}
+
+
+
 
 
 uint32_t freq = 50,pulse = 100; 
@@ -343,6 +523,7 @@ uint8_t need_fresh = 0;
   */
 int main(void)
 {
+
   /* USER CODE BEGIN 1 */
 
   /* USER CODE END 1 */
@@ -365,6 +546,7 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_ADC1_Init();
   MX_TIM1_Init();
   MX_TIM3_Init();
@@ -372,24 +554,24 @@ int main(void)
   MX_TIM14_Init();
   MX_TIM17_Init();
   /* USER CODE BEGIN 2 */
-  
-	//ADC ≤…ºØ
-	HAL_ADCEx_Calibration_Start(&hadc1);
-	HAL_ADC_Start_IT(&hadc1);
 	
-	//DAC  ‰≥ˆ
+	//ÂºÄÂêØÊòæÁ§∫‰∏≠Êñ≠
+	HAL_TIM_Base_Start_IT(&htim14);
+    
+	//ADC
+	HAL_ADCEx_Calibration_Start(&hadc1);
+	HAL_ADC_Start_DMA(&hadc1,(uint32_t *)adc_buffer,ADC_BUFFER_SIZE*ADC_CHANNEL_NUM);
+    
+    disp_on();
+	
+	//DAC ËæìÂá∫
 	HAL_TIM_PWM_Start(&htimDAC, TIM_CHANNEL_1);
 	
-	//œ‘ æ÷–∂œ
-	HAL_TIM_Base_Start_IT(&htim14);
-	
-	//¬ˆ≥Â»∫π¶ƒ‹µƒ◊‘∂Øπÿ±’÷–∂œπ¶ƒ‹
+	//Ëá™Âä®ÂÖ≥Èó≠ËæìÂá∫‰∏≠Êñ≠
 	HAL_TIM_Base_Start_IT(&htimSTP);
 	
-	//≈‰÷√–≈∫≈ ‰≥ˆ
-	output_mode = MODE_NORMAL;
-	TIM_ConfigFrequencyOptimized(2, 2000);
-	
+	//
+	output_off();
 	
 	HAL_Delay(500);
 
@@ -401,81 +583,12 @@ int main(void)
   {
       if(need_fresh){
           need_fresh = 0;
-          TIM_ConfigFrequencyOptimized(freq / 10.0f, pulse);
+//          TIM_ConfigFrequencyOptimized(freq / 10.0f, pulse);
+		  Change_Mode();
       }
-	  
-	  g_ram[0] = DISP_NUM_0;
-		HAL_Delay(300);
-	  g_ram[0] = DISP_NUM_1;
-		HAL_Delay(300);
-	  g_ram[0] = DISP_NUM_2;
-		HAL_Delay(300);
-	  g_ram[0] = DISP_NUM_3;
-		HAL_Delay(300);
-	  g_ram[0] = DISP_NUM_4;
-		HAL_Delay(300);
-	  g_ram[0] = DISP_NUM_5;
-		HAL_Delay(300);
-	  g_ram[0] = DISP_NUM_6;
-		HAL_Delay(300);
-	  g_ram[0] = DISP_NUM_7;
-		HAL_Delay(300);
-	  g_ram[0] = DISP_NUM_8;
-		HAL_Delay(300);
-	  g_ram[0] = DISP_NUM_9;
-		HAL_Delay(300);
-	  g_ram[0] = DISP_CHAR_A;
-		HAL_Delay(300);
-	  g_ram[0] = DISP_CHAR_B;
-		HAL_Delay(300);
-	  g_ram[0] = DISP_CHAR_C;
-		HAL_Delay(300);
-	  g_ram[0] = DISP_CHAR_D;
-		HAL_Delay(300);
-	  g_ram[0] = DISP_CHAR_E;
-		HAL_Delay(300);
-	  g_ram[0] = DISP_CHAR_F;
-		HAL_Delay(300);
-	  g_ram[0] = DISP_CHAR_G;
-		HAL_Delay(300);
-	  g_ram[0] = DISP_CHAR_H;
-		HAL_Delay(300);
-	  g_ram[0] = DISP_CHAR_I;
-		HAL_Delay(300);
-	  g_ram[0] = DISP_CHAR_J;
-		HAL_Delay(300);
-	  g_ram[0] = DISP_CHAR_K;
-		HAL_Delay(300);
-	  g_ram[0] = DISP_CHAR_L;
-		HAL_Delay(300);
-	  g_ram[0] = DISP_CHAR_M;
-		HAL_Delay(300);
-	  g_ram[0] = DISP_CHAR_N;
-		HAL_Delay(300);
-	  g_ram[0] = DISP_CHAR_O;
-		HAL_Delay(300);
-	  g_ram[0] = DISP_CHAR_P;
-		HAL_Delay(300);
-	  g_ram[0] = DISP_CHAR_Q;
-		HAL_Delay(300);
-	  g_ram[0] = DISP_CHAR_R;
-		HAL_Delay(300);
-	  g_ram[0] = DISP_CHAR_S;
-		HAL_Delay(300);
-	  g_ram[0] = DISP_CHAR_T;
-		HAL_Delay(300);
-	  g_ram[0] = DISP_CHAR_U;
-		HAL_Delay(300);
-	  g_ram[0] = DISP_CHAR_V;
-		HAL_Delay(300);
-	  g_ram[0] = DISP_CHAR_W;
-		HAL_Delay(300);
-	  g_ram[0] = DISP_CHAR_X;
-		HAL_Delay(300);
-	  g_ram[0] = DISP_CHAR_Y;
-		HAL_Delay(300);
-	  g_ram[0] = DISP_CHAR_Z;
-		HAL_Delay(300);
+	  disp_task();
+	  HAL_Delay(10);
+
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -507,7 +620,7 @@ void SystemClock_Config(void)
   RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
   RCC_OscInitStruct.PLL.PLLM = RCC_PLLM_DIV1;
   RCC_OscInitStruct.PLL.PLLN = 15;
-  RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
+  RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV6;
   RCC_OscInitStruct.PLL.PLLR = RCC_PLLR_DIV4;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
   {
@@ -549,19 +662,19 @@ static void MX_ADC1_Init(void)
   /** Configure the global features of the ADC (Clock, Resolution, Data Alignment and number of conversion)
   */
   hadc1.Instance = ADC1;
-  hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV2;
+  hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV4;
   hadc1.Init.Resolution = ADC_RESOLUTION_12B;
   hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
   hadc1.Init.ScanConvMode = ADC_SCAN_ENABLE;
   hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
   hadc1.Init.LowPowerAutoWait = DISABLE;
   hadc1.Init.LowPowerAutoPowerOff = DISABLE;
-  hadc1.Init.ContinuousConvMode = DISABLE;
+  hadc1.Init.ContinuousConvMode = ENABLE;
   hadc1.Init.NbrOfConversion = 4;
-  hadc1.Init.DiscontinuousConvMode = ENABLE;
+  hadc1.Init.DiscontinuousConvMode = DISABLE;
   hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
   hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
-  hadc1.Init.DMAContinuousRequests = DISABLE;
+  hadc1.Init.DMAContinuousRequests = ENABLE;
   hadc1.Init.Overrun = ADC_OVR_DATA_PRESERVED;
   hadc1.Init.SamplingTimeCommon1 = ADC_SAMPLETIME_160CYCLES_5;
   hadc1.Init.SamplingTimeCommon2 = ADC_SAMPLETIME_160CYCLES_5;
@@ -640,7 +753,7 @@ static void MX_TIM1_Init(void)
   htim1.Init.Period = 6000;
   htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim1.Init.RepetitionCounter = 0;
-  htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
   if (HAL_TIM_Base_Init(&htim1) != HAL_OK)
   {
     Error_Handler();
@@ -722,9 +835,9 @@ static void MX_TIM3_Init(void)
   htim3.Instance = TIM3;
   htim3.Init.Prescaler = 0;
   htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim3.Init.Period = 65535;
+  htim3.Init.Period = 100;
   htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-  htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
   if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
   {
     Error_Handler();
@@ -879,6 +992,22 @@ static void MX_TIM17_Init(void)
 }
 
 /**
+  * Enable DMA controller clock
+  */
+static void MX_DMA_Init(void)
+{
+
+  /* DMA controller clock enable */
+  __HAL_RCC_DMA1_CLK_ENABLE();
+
+  /* DMA interrupt init */
+  /* DMA1_Channel1_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Channel1_IRQn, 3, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Channel1_IRQn);
+
+}
+
+/**
   * @brief GPIO Initialization Function
   * @param None
   * @retval None
@@ -886,6 +1015,8 @@ static void MX_TIM17_Init(void)
 static void MX_GPIO_Init(void)
 {
   GPIO_InitTypeDef GPIO_InitStruct = {0};
+  /* USER CODE BEGIN MX_GPIO_Init_1 */
+  /* USER CODE END MX_GPIO_Init_1 */
 
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOC_CLK_ENABLE();
@@ -961,10 +1092,11 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
+  /* USER CODE BEGIN MX_GPIO_Init_2 */
+  /* USER CODE END MX_GPIO_Init_2 */
 }
 
 /* USER CODE BEGIN 4 */
-
 
 
 /**
@@ -1372,6 +1504,103 @@ void led_task(void){
 	}
 }
 
+volatile uint16_t adc_buffer[ADC_BUFFER_SIZE][ADC_CHANNEL_NUM] = {0};
+
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
+{
+	adc_calc();
+}
+
+
+void HAL_IncTick(void)
+{
+  uwTick += (uint32_t)uwTickFreq;
+}
+
+volatile double adc_value[ADC_CHANNEL_NUM] = {0};
+
+volatile uint8_t dac_sta = DISABLE; 
+volatile uint16_t dac_fb = 0;
+
+void adc_calc(void){
+    uint32_t temp0;
+    uint32_t temp1;
+    uint32_t temp2;
+    uint32_t temp3;
+    
+    temp0 = 0;
+    temp1 = 0;
+    temp2 = 0;
+    temp3 = 0;
+    
+    for(uint8_t i=0;i<ADC_CHANNEL_NUM;i++){
+        temp0 += adc_buffer[i][0];
+        temp1 += adc_buffer[i][1];
+        temp2 += adc_buffer[i][2];
+        temp3 += adc_buffer[i][3];
+    }
+		
+    adc_value[0] = (double)(temp0 * 2.414) / (double)temp3;
+    adc_value[1] = (double)(temp1 * 1212) / (double)temp3;
+    adc_value[2] = (double)(temp2 * 1.212) / (double)temp3;
+    
+	if(dac_sta)
+		dac_feedback();
+}
+
+
+void dac_set_volt(uint16_t volt_mv){
+    uint32_t temp;
+    if(volt_mv == 0){
+        htimDAC.Instance->CCR1 = 0;
+        dac_sta = DISABLE;
+        return;
+    }
+    temp = (uint32_t)volt_mv*10000/1031;
+    htimDAC.Instance->CCR1 = temp;
+    
+    dac_fb = volt_mv;
+    dac_sta = ENABLE;
+}
+
+void dac_feedback(void){
+    uint16_t temp;
+	
+	static uint8_t count = 0;
+	static double volt_buffer = 0;
+	
+	count++;
+	volt_buffer += adc_value[DAC_CH];
+	
+	if(count >= 50){
+		temp = volt_buffer*20;
+        if(dac_fb > temp + 1 && htimDAC.Instance->CCR1 < 10000){
+			htimDAC.Instance->CCR1++;
+        }
+        else if(dac_fb + 1 < temp && htimDAC.Instance->CCR1 > 0){
+			htimDAC.Instance->CCR1--;
+        }
+		count = 0;
+		volt_buffer = 0;
+	}
+}
+
+void HAL_Delay(uint32_t Delay)
+{
+  uint32_t tickstart = HAL_GetTick();
+  uint32_t wait = Delay;
+
+  /* Add a freq to guarantee minimum wait */
+  if (wait < HAL_MAX_DELAY)
+  {
+    wait += (uint32_t)(uwTickFreq);
+  }
+
+  while ((HAL_GetTick() - tickstart) < wait)
+  {
+	  if(0)break;
+  }
+}
 
 /* USER CODE END 4 */
 

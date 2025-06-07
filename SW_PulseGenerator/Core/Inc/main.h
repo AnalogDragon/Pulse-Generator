@@ -121,15 +121,18 @@ void Error_Handler(void);
 #define key_move_GPIO_Port GPIOB
 #define key_freq_Pin GPIO_PIN_9
 #define key_freq_GPIO_Port GPIOB
+
 /* USER CODE BEGIN Private defines */
 
 
 
 
-#define MODE_ONE_PULSE 0xAA
-#define MODE_PULSE_GROUP 0xBB
-extern volatile uint8_t output_mode;
+#define MODE_NORMAL 		0x00
+#define MODE_SINGEL_BURST 	0xAA
+#define MODE_REPEAT_BURST 	0xBB
 
+extern volatile uint8_t output_mode;
+extern volatile uint8_t pulse_group_output;
 
 #define DISP_NUM_0  0x003F
 #define DISP_NUM_1  0x0406
@@ -144,7 +147,7 @@ extern volatile uint8_t output_mode;
 
 
 #define DISP_CHAR_A	0x00F7
-#define DISP_CHAR_B	0x04FD
+#define DISP_CHAR_B	0x128F
 #define DISP_CHAR_C	0x0039
 #define DISP_CHAR_D	0x120F
 #define DISP_CHAR_E	0x00F9
@@ -170,8 +173,19 @@ extern volatile uint8_t output_mode;
 #define DISP_CHAR_Y	0x1500
 #define DISP_CHAR_Z	0x2409
 
+void adc_switch(uint8_t state);
 
+#define ADC_BUFFER_SIZE 32
+#define ADC_CHANNEL_NUM 4
 
+#define BAT_CH 0
+#define HV_CH 1
+#define DAC_CH 2
+#define VREF_CH 3
+
+extern volatile uint16_t adc_buffer[ADC_BUFFER_SIZE][ADC_CHANNEL_NUM];
+
+extern volatile double adc_value[ADC_CHANNEL_NUM];
 
 /* USER CODE END Private defines */
 
