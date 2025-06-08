@@ -23863,7 +23863,7 @@
 			(justify left bottom)
 		)
 	)
-	(gr_text "V/KV"
+	(gr_text "mV/V"
 		(at 106.8 127.5 0)
 		(layer "F.SilkS")
 		(uuid "209d802f-8dd7-4f4d-8757-957b0c038c95")

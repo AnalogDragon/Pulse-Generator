@@ -33,6 +33,15 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+
+
+#define htimDAC htim16
+#define htimPWM htim1
+#define htimTIM htim17
+#define htimSTP htim3
+
+//bug：切换到onepulse模式后再切换回一开始，会有问题
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -66,9 +75,44 @@ static void MX_TIM14_Init(void);
 static void MX_TIM17_Init(void);
 /* USER CODE BEGIN PFP */
 
+
+void disp_on(void);
+void disp_task(void);
 void dac_set_volt(uint16_t volt_mv);
 void adc_calc(void);
 void dac_feedback(void);
+void disp_output_sta_task(void);
+void key_output(void);
+void set_output(uint8_t sta);
+HAL_StatusTypeDef TIM_ConfigFrequencyOptimized(float desiredFreq, uint32_t pulseWidth_ns);
+void KeyStaIn(uint8_t num, uint8_t sta);
+
+void key_do_output(void);
+void key_do_pulse(uint8_t press_long);
+void key_do_volt(uint8_t press_long);
+void key_do_freq(uint8_t press_long);
+void key_do_move(uint8_t press_long);
+void key_do_add(void);
+void key_do_sub(void);
+void key_do_negt(void);
+
+
+extern uint8_t set_FREQ_unit;
+extern uint8_t set_PULSE_unit;
+extern uint8_t set_VOLT_unit;
+
+extern int16_t set_FREQ_num;	//50.0Hz
+extern int16_t set_PULSE_num;	//5.0uS
+extern int16_t set_VOLT_num;	//500mV
+
+extern uint8_t disp_set_unit;
+
+extern uint8_t need_disp_str;
+extern uint8_t need_disp_str_changed;
+extern const uint16_t  *p_disp_str1;
+extern const uint16_t  *p_disp_str2;
+extern uint8_t  len_disp_str1;
+extern uint8_t  len_disp_str2;
 
 
 /* USER CODE END PFP */
@@ -76,247 +120,8 @@ void dac_feedback(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-#define htimDAC htim16
-#define htimPWM htim1
-#define htimTIM htim17
-#define htimSTP htim3
 
-
-
-volatile uint8_t output_mode = MODE_NORMAL;
-volatile uint8_t pulse_group_output = 0;
-
-
-/**
-  * @brief  ����PWM�����ȣ����޸�PSC��ARR��
-  * @param  htim: ��ʱ�����ָ��
-  * @param  Channel: PWMͨ����TIM_CHANNEL_1�ȣ�
-  * @param  pulseWidth_ns: �����������ȣ����룩
-  * @retval HAL״̬
-  */
-HAL_StatusTypeDef TIM_ConfigPulseWidth(TIM_HandleTypeDef *htim, uint32_t Channel, uint32_t pulseWidth_ns)
-{
-    // ��ȡ��ǰ��ʱ������
-    uint32_t psc = htim->Instance->PSC;
-    uint32_t arr = htim->Instance->ARR; 
-    uint32_t timerClockFreq = HAL_RCC_GetHCLKFreq(); // ����ʹ��APB1��ʱ������������ʵ�������
-    
-    // ���㶨ʱ����������ʱ�䣨���룩
-    float timerPeriod_ns = (1.0f / (timerClockFreq / (psc + 1))) * 1e9f;
-    
-    // ������Ҫ��CCRֵ
-    uint32_t ccr = (uint32_t)(pulseWidth_ns / timerPeriod_ns);
-    
-    // ȷ��CCR1С��ARR/2����������
-    if (ccr > (arr / 2)) {
-        ccr = arr / 2;
-    }
-    
-    // ȷ��CCRֵ��Ч
-    if (ccr == 0) {
-        ccr = 1; // ������̫�̻�̫��
-    }
-    
-    // ����CCR�Ĵ���
-    switch (Channel) {
-        case TIM_CHANNEL_1:
-            htim->Instance->CCR1 = ccr;
-            break;
-        case TIM_CHANNEL_2:
-            htim->Instance->CCR2 = ccr;
-            break;
-        case TIM_CHANNEL_3:
-            htim->Instance->CCR3 = ccr;
-            break;
-        case TIM_CHANNEL_4:
-            htim->Instance->CCR4 = ccr;
-            break;
-        default:
-            return HAL_ERROR;
-    }
-    
-    return HAL_OK;
-}
-
-/**
-  * @brief  ���ö�ʱ��������ָ����Ƶ�ʣ�֧��0.1Hz������Ż���
-  * @param  htim: ��ʱ�����ָ��
-  * @param  desiredFreq: �������ɵ�Ƶ��(Hz) (֧��0.1Hz������)
-  * @retval HAL״̬
-  */
-HAL_StatusTypeDef TIM_ConfigFrequencyOptimized(
-                            float desiredFreq, 
-                            uint32_t pulseWidth_ns)
-{
-    // ��������������Ч��
-    if (desiredFreq <= 0.0f)
-    {
-        return HAL_ERROR;
-    }
-
-    uint32_t bestPsc = 0;
-    uint32_t bestArr = 0;
-    float minError = FLT_MAX;  // ��ʼ��Ϊ��󸡵���
-    float actualFreq = 0.0f;
-    uint32_t timerClockFreq = HAL_RCC_GetHCLKFreq();
-    
-    // ��������������
-    float desiredPeriods = (float)timerClockFreq / desiredFreq;
-    
-    // �������PSC��ARR���
-    for (uint32_t psc = 0; psc <= 0xFFFF; psc++)
-    {
-        uint32_t arr = (uint32_t)(desiredPeriods / (psc + 1)) - 1;
-        
-        // ȷ��ARR����Ч��Χ��
-        if (arr > 0xFFFF)
-            continue;
-        
-        // ����ʵ��Ƶ�ʺ����
-        actualFreq = (float)timerClockFreq / ((psc + 1) * (arr + 1));
-        float error = fabsf(actualFreq - desiredFreq);
-        
-        // ����ҵ�����ȷ����ϣ��������ֵ
-        if (error < minError)
-        {
-            minError = error;
-            bestPsc = psc;
-            bestArr = arr;
-            
-            // �������Ѿ���С����ǰ�˳�ѭ��
-            if (error < (desiredFreq * 0.0001f)) // 0.01%���
-                break;
-        }
-    }
-    
-    // ����Ƿ��ҵ���Ч���
-    if (bestArr == 0 && bestPsc == 0 && desiredFreq < ((float)timerClockFreq / (0xFFFFFFFF)))
-    {
-        // ������Ƶ���
-        bestPsc = 0xFFFF;
-        bestArr = (uint32_t)((float)timerClockFreq / (desiredFreq * (bestPsc + 1))) - 1;
-        
-        if (bestArr > 0xFFFF)
-            return HAL_ERROR;
-    }
-    
-    
-    // ���ö�ʱ��
-    HAL_TIM_Base_Stop_IT(&htimTIM);
-    HAL_Delay(1);
-    HAL_TIM_PWM_PWMN_Stop(&htimPWM, TIM_CHANNEL_1);
-    HAL_Delay(1);
-    HAL_TIM_PWM_PWMN_Stop_IT(&htimPWM, TIM_CHANNEL_1);
-    HAL_Delay(1);
-    
-    HAL_Delay(50);
-    
-    htimPWM.Instance->CNT = 0;
-    htimTIM.Instance->CNT = 0;
-    
-    HAL_Delay(10);
-		
-		
-		if(output_mode == MODE_SINGEL_BURST)
-		{
-				if(bestPsc == 0)
-				{
-						if (HAL_TIM_OnePulse_Init(&htimPWM, TIM_OPMODE_SINGLE) != HAL_OK)
-						{
-								Error_Handler();
-						}
-						//ֻ�õ���PWM��ʱ��
-						__HAL_TIM_SET_PRESCALER(&htimPWM, 0);
-						__HAL_TIM_SET_AUTORELOAD(&htimPWM, bestArr);
-						
-						TIM_ConfigPulseWidth(&htimPWM, TIM_CHANNEL_1, pulseWidth_ns);
-						
-						__HAL_TIM_SET_PRESCALER(&htimTIM, 60000-1);
-						__HAL_TIM_SET_AUTORELOAD(&htimTIM, 1000-1);
-						
-						HAL_TIM_Base_Start_IT(&htimTIM);
-				}
-				else
-				{
-					return HAL_ERROR;
-				}
-		}
-		else if(output_mode == MODE_REPEAT_BURST)
-		{
-				if(bestPsc == 0)
-				{
-						htimPWM.Instance->RCR = 100-1;
-						if (HAL_TIM_OnePulse_Init(&htimPWM, TIM_OPMODE_SINGLE) != HAL_OK)
-						{
-								Error_Handler();
-						}
-						
-						//ֻ�õ���PWM��ʱ��
-						__HAL_TIM_SET_PRESCALER(&htimPWM, 0);
-						__HAL_TIM_SET_AUTORELOAD(&htimPWM, bestArr);
-						
-						TIM_ConfigPulseWidth(&htimPWM, TIM_CHANNEL_1, pulseWidth_ns);
-						
-						__HAL_TIM_SET_PRESCALER(&htimTIM, 60000-1);
-						__HAL_TIM_SET_AUTORELOAD(&htimTIM, 1000-1);
-						
-						HAL_TIM_Base_Start_IT(&htimTIM);
-				}
-				else
-				{
-					return HAL_ERROR;
-				}
-		}
-		else
-		{
-				if (HAL_TIM_OnePulse_Init(&htimPWM, TIM_OPMODE_REPETITIVE) != HAL_OK)
-				{
-						Error_Handler();
-				}
-				if(bestPsc == 0)
-				{
-						//ֻ�õ���PWM��ʱ��
-						__HAL_TIM_SET_PRESCALER(&htimPWM, 0);
-						__HAL_TIM_SET_AUTORELOAD(&htimPWM, bestArr);
-						
-						TIM_ConfigPulseWidth(&htimPWM, TIM_CHANNEL_1, pulseWidth_ns);
-						
-						HAL_TIM_PWM_PWMN_Start(&htimPWM, TIM_CHANNEL_1);
-				}
-				else
-				{
-						__HAL_TIM_SET_PRESCALER(&htimTIM, bestPsc);
-						__HAL_TIM_SET_AUTORELOAD(&htimTIM, bestArr);
-						//ֻ�õ���PWM��ʱ��
-						__HAL_TIM_SET_PRESCALER(&htimPWM, 0);
-						__HAL_TIM_SET_AUTORELOAD(&htimPWM, 60000-1);
-						
-						TIM_ConfigPulseWidth(&htimPWM, TIM_CHANNEL_1, pulseWidth_ns);
-						
-						__HAL_TIM_SET_AUTORELOAD(&htimPWM, htimPWM.Instance->CCR1+10000);
-						
-						HAL_TIM_Base_Start_IT(&htimTIM);
-				}
-		}
-		
-
-    
-    return HAL_OK;
-}
-
-
-void output_off(void){
-    dac_set_volt(0);
-    HAL_TIM_Base_Stop_IT(&htimTIM);
-    HAL_Delay(1);
-    HAL_TIM_PWM_PWMN_Stop(&htimPWM, TIM_CHANNEL_1);
-    HAL_Delay(1);
-    HAL_TIM_PWM_PWMN_Stop_IT(&htimPWM, TIM_CHANNEL_1);
-    HAL_Delay(1);
-}
-
-
-uint16_t g_ram[6] = {0xFFFF,0,0xFFFF,0,0xFFFF,0,};
+uint16_t g_ram[6] = {0};
 const uint16_t disp_output[6] = {DISP_CHAR_O,DISP_CHAR_U,DISP_CHAR_T,DISP_CHAR_P,DISP_CHAR_U,DISP_CHAR_T};
 const uint16_t disp_normal_mode[11] = {DISP_CHAR_N,DISP_CHAR_O,DISP_CHAR_R,DISP_CHAR_M,DISP_CHAR_A,DISP_CHAR_L,0,DISP_CHAR_M,DISP_CHAR_O,DISP_CHAR_D,DISP_CHAR_E};
 const uint16_t disp_singel_burst[12] = {DISP_CHAR_S,DISP_CHAR_I,DISP_CHAR_N,DISP_CHAR_G,DISP_CHAR_E,DISP_CHAR_L,0,DISP_CHAR_B,DISP_CHAR_U,DISP_CHAR_R,DISP_CHAR_S,DISP_CHAR_T};
@@ -324,145 +129,206 @@ const uint16_t disp_repeat_burst[12] = {DISP_CHAR_R,DISP_CHAR_E,DISP_CHAR_P,DISP
 const uint16_t disp_100_CPS[6] ={DISP_NUM_1,DISP_NUM_0,DISP_NUM_0,DISP_CHAR_C,DISP_CHAR_P,DISP_CHAR_S}; 
 const uint16_t disp_100_count[6] ={DISP_NUM_1,DISP_NUM_0,DISP_NUM_0,DISP_CHAR_C,DISP_CHAR_N,DISP_CHAR_T}; 
 
-volatile uint8_t step_str = 0;
+const uint16_t disp_negative[6] ={DISP_CHAR_N,DISP_CHAR_E,DISP_CHAR_G,0x0001,0x003E,0x0001}; 
+const uint16_t disp_positive[6] ={DISP_CHAR_P,DISP_CHAR_O,DISP_CHAR_S,0x0008,0x0037,0x0008}; 
 
-//如果返回1，则说明已经显示完成
-// run in 100ms
-uint8_t disp_str_step(const uint16_t* str,uint8_t len){
-	if(len == 0){
-		memset(g_ram,0,12);
-		if(step_str >= 2){
-			step_str = 0;
-			return 1;
+const uint16_t disp_HZ[6] ={0,0,0,0,DISP_CHAR_H,DISP_CHAR_Z}; 
+const uint16_t disp_KHZ[6] ={0,0,0,DISP_CHAR_K,DISP_CHAR_H,DISP_CHAR_Z}; 
+const uint16_t disp_MHZ[6] ={0,0,0,DISP_CHAR_M,DISP_CHAR_H,DISP_CHAR_Z}; 
+const uint16_t disp_NS[6] ={0,0,0,0,DISP_CHAR_n,DISP_CHAR_S}; 
+const uint16_t disp_US[6] ={0,0,0,0,DISP_CHAR_u,DISP_CHAR_S}; 
+const uint16_t disp_MV[6] ={0,0,0,0,DISP_CHAR_m,DISP_CHAR_V}; 
+const uint16_t disp_V[6] ={0,0,0,0,0,DISP_CHAR_V}; 
+
+
+
+/*
+频率范围：
+normal：000.1Hz~999.9Hz，001KHZ~999KHZ，0.00MHZ~5.00MHZ
+burst：001KHZ~999KHZ，0.01MHZ~5.00MHZ
+电压范围：
+0005mV~1000mV
+脉宽范围：
+000.1uS~500.0uS,0050nS~9999nS
+除此之外还需要计算频率范围锁
+*/
+#define SET_FREQ_HZ 	0
+#define SET_FREQ_KHZ 	1
+#define SET_FREQ_MHZ 	2
+
+#define SET_PULSE_NS 	3
+#define SET_PULSE_US 	4
+
+#define SET_VOLT_MV 	5
+#define SET_VOLT_V 		6
+
+
+
+void set_limit(void){
+	
+	//电压限制：0005mV~1000mV
+	if(set_VOLT_unit == SET_VOLT_MV){
+		if(set_VOLT_num < 5){
+			set_VOLT_num = 5;
+		}
+		else if(set_VOLT_num > 1000){
+			set_VOLT_num = 1000;
 		}
 	}
-	else if(len<=6){
-		memset(g_ram,0,12);
-		if(step_str <= 15){
-			for(uint8_t i=0;i<len;i++){
-				g_ram[i+6-len] = str[i];
+	else if(set_VOLT_unit == SET_VOLT_V){
+	}
+	else{
+		set_VOLT_unit = SET_VOLT_MV;
+		set_VOLT_num = 500;
+	}
+	
+	if(output_mode == MODE_NORMAL){
+		//频率限制：
+		//normal：000.1Hz~999.9Hz，001KHZ~999KHZ，0.01MHZ~5.00MHZ
+		if(set_FREQ_unit == SET_FREQ_HZ){
+			if(set_FREQ_num < 1){
+				set_FREQ_num = 1;
+			}
+			else if(set_FREQ_num > 9999){
+				set_FREQ_num = 9999;
 			}
 		}
-		if(step_str >= 17){
-			step_str = 0;
-			return 1;
+		else if(set_FREQ_unit == SET_FREQ_KHZ){
+			if(set_FREQ_num < 1){
+				set_FREQ_num = 1;
+			}
+			else if(set_FREQ_num > 999){
+				set_FREQ_num = 999;
+			}
+		}
+		else if(set_FREQ_unit == SET_FREQ_MHZ){
+			if(set_FREQ_num < 1){
+				set_FREQ_num = 1;
+			}
+			else if(set_FREQ_num > 500){
+				set_FREQ_num = 500;
+			}
+		}
+		else{
+			set_FREQ_unit = SET_FREQ_HZ;
+			set_FREQ_num = 50;
+		}
+		//脉宽限制 000.1uS~500.0uS,0050nS~9999nS
+		if(set_PULSE_unit == SET_PULSE_NS){
+			if(set_PULSE_num < 50){
+				set_PULSE_num = 50;
+			}
+			else if(set_PULSE_num > 9950){
+				set_PULSE_num = 9950;
+			}
+		}
+		else if(set_PULSE_unit == SET_PULSE_US){
+			if(set_PULSE_num < 1){
+				set_PULSE_num = 1;
+			}
+			else if(set_PULSE_num > 5000){
+				set_PULSE_num = 5000;
+			}
+		}
+		else{
+			set_PULSE_unit = SET_PULSE_US;
+			set_PULSE_num = 50;
+		}
+	}
+	else if(output_mode == MODE_REPEAT_BURST || output_mode == MODE_SINGEL_BURST){
+		//频率限制：
+		//burst：001KHZ~999KHZ，0.01MHZ~5.00MHZ
+		if(set_FREQ_unit == SET_FREQ_HZ){
+			set_FREQ_unit = SET_FREQ_KHZ;
+			set_FREQ_num = 10;
+			if(disp_set_unit == SET_FREQ_HZ){
+				disp_set_unit = SET_FREQ_KHZ;
+			}
+		}
+		else if(set_FREQ_unit == SET_FREQ_KHZ){
+			if(set_FREQ_num < 1){
+				set_FREQ_num = 1;
+			}
+			else if(set_FREQ_num > 999){
+				set_FREQ_num = 999;
+			}
+		}
+		else if(set_FREQ_unit == SET_FREQ_MHZ){
+			if(set_FREQ_num < 1){
+				set_FREQ_num = 1;
+			}
+			else if(set_FREQ_num > 500){
+				set_FREQ_num = 500;
+			}
+		}
+		else{
+			set_FREQ_unit = SET_FREQ_KHZ;
+			set_FREQ_num = 10;
+		}
+		//脉宽限制 000.1uS~500.0uS,0050nS~9999nS
+		if(set_PULSE_unit == SET_PULSE_NS){
+			if(set_PULSE_num < 50){
+				set_PULSE_num = 50;
+			}
+			else if(set_PULSE_num > 9950){
+				set_PULSE_num = 9950;
+			}
+		}
+		else if(set_PULSE_unit == SET_PULSE_US){
+			if(set_PULSE_num < 1){
+				set_PULSE_num = 1;
+			}
+			else if(set_PULSE_num > 5000){
+				set_PULSE_num = 5000;
+			}
+		}
+		else{
+			set_PULSE_unit = SET_PULSE_US;
+			set_PULSE_num = 50;
 		}
 	}
 	else{
-		memset(g_ram,0,12);
-		if(step_str < 7){
-			for(uint8_t i=0;i<6;i++){
-				g_ram[i] = str[i];
-			}
-		}
-		else if(step_str - 7 < len-6){
-			for(uint8_t i=0;i<6;i++){
-				g_ram[i] = str[step_str - 7+i+1];
-			}
-		}
-		else if(step_str < 7+8+len-6){
-			for(uint8_t i=0;i<6;i++){
-				g_ram[i] = str[len-6+i];
-			}
-		}
-		else if(step_str < 7+8+len-6+2){
-		}
-		else{
-			step_str = 0;
-			return 1;
-		}
-	}
-	step_str++;
-	return 0;
-}
+		output_mode = MODE_NORMAL;
+		
+		need_disp_str_changed = 1;
+		need_disp_str = 1;
+	
+		p_disp_str1 = disp_normal_mode;
+		len_disp_str1 = sizeof(disp_normal_mode)/2;
+		
+		set_FREQ_unit = SET_FREQ_HZ;
+		set_PULSE_unit = SET_PULSE_US;
+		set_VOLT_unit = SET_VOLT_MV;
 
-const uint16_t disp_number_table[10] = {DISP_NUM_0,DISP_NUM_1,DISP_NUM_2,DISP_NUM_3,DISP_NUM_4,DISP_NUM_5,DISP_NUM_6,DISP_NUM_7,DISP_NUM_8,DISP_NUM_9};
-
-void disp_num(uint32_t num,uint8_t len,uint8_t pos,uint8_t e10){
-	uint16_t temp[6];
-	
-	if(pos >= 6 || e10 >= 6 || len > 6)
-		return;
-	
-	temp[0] = disp_number_table[num/100000%10];
-	temp[1] = disp_number_table[num/10000%10];
-	temp[2] = disp_number_table[num/1000%10];
-	temp[3] = disp_number_table[num/100%10];
-	temp[4] = disp_number_table[num/10%10];
-	temp[5] = disp_number_table[num%10];
-	
-	if(e10)
-		temp[5-e10] |= 0x4000;
-	
-	for(uint8_t i=0;i<len;i++){
-		g_ram[pos+i] = temp[i+6-len];
-	}
-}
-
-void disp_on(void){
-	while(!disp_str_step(disp_normal_mode,sizeof(disp_normal_mode)/2))
-		HAL_Delay(100);
-	
-	g_ram[0] = DISP_CHAR_B;
-	g_ram[1] = DISP_CHAR_A;
-	g_ram[2] = DISP_CHAR_T;
-	g_ram[5] = DISP_CHAR_V;
-	
-	for(uint8_t i=0;i<10;i++){
-		disp_num((uint32_t)((adc_value[BAT_CH]+0.05)*10),2,3,1);
-		HAL_Delay(100);
+		set_FREQ_num = 500;	//50.0Hz
+		set_PULSE_num = 50;	//5.0uS
+		set_VOLT_num = 500;	//500mV
 	}
 	
-	memset(g_ram,0,12);
-	HAL_Delay(200);
-}
-
-uint8_t need_disp_str = 0;
-uint8_t need_disp_str_changed = 0;
-const uint16_t  *p_disp_str1;
-const uint16_t  *p_disp_str2;
-uint8_t  len_disp_str1;
-uint8_t  len_disp_str2;
-
-
-void disp_task(void){
-	static uint16_t str_timer = 0;
-	if(need_disp_str > 2)need_disp_str = 0;
-	
-	//切换模式时候显示的字符串提示
-	if(need_disp_str){
-		if(need_disp_str_changed){
-			need_disp_str_changed = 0;
-			str_timer = 0;
-			step_str = 0;
-		}
-		if((str_timer % 10) == 0){
-			//显示字符串
-			if(need_disp_str == 2){
-				if(disp_str_step(p_disp_str2,len_disp_str2)){
-					need_disp_str--;
-				}
-			}
-			else if(need_disp_str == 1){
-				if(disp_str_step(p_disp_str1,len_disp_str1)){
-					need_disp_str--;
-				}
-			}
-			else{
-				need_disp_str = 0;
-				str_timer = 0;
-			}
-		}
-		str_timer++;
-		return;
+	//计算脉宽不能低于1/2周期
+	uint32_t pulse;
+	uint32_t freq;
+	if(set_FREQ_unit == SET_FREQ_HZ){//000.1Hz~999.9Hz
+		pulse = 9999;
 	}
-	str_timer = 0;
+	else if(set_FREQ_unit == SET_FREQ_KHZ){//001KHZ~999KHZ
+		freq = set_FREQ_num;
+		pulse = 1000000 / freq / 2;	//ns
+	}
+	else if(set_FREQ_unit == SET_FREQ_MHZ){//0.01MHZ~5.00MHZ
+		freq = set_FREQ_num*10;
+		pulse = 1000000 / freq / 2;	//ns
+	}
 	
-	
+	if(set_PULSE_num > pulse){
+		set_PULSE_num = pulse;
+	}
 	
 }
 
-
+/*
+调用后循环切换mode
+*/
 void Change_Mode(void){
     switch(output_mode){
         case MODE_NORMAL:
@@ -475,6 +341,7 @@ void Change_Mode(void){
 		
 			p_disp_str1 = disp_100_CPS;
 			len_disp_str1 = sizeof(disp_100_CPS)/2;
+			
             break;
 		
         case MODE_REPEAT_BURST:
@@ -487,33 +354,204 @@ void Change_Mode(void){
 		
 			p_disp_str1 = disp_100_count;
 			len_disp_str1 = sizeof(disp_100_count)/2;
+			
             break;
 		
         case MODE_SINGEL_BURST:
         default:
             output_mode = MODE_NORMAL;
 		
-		
 			need_disp_str_changed = 1;
 			need_disp_str = 1;
 		
 			p_disp_str1 = disp_normal_mode;
 			len_disp_str1 = sizeof(disp_normal_mode)/2;
+		
             break;
     }
+	//切换mode之后需要限制一次limit
+	set_limit();
+}
+
+#define KEY_SIZE 7
+#define KEY_TIME_TRIG	10
+
+uint8_t press_time[KEY_SIZE] = {0};
+uint8_t release_time[KEY_SIZE] = {0};
+uint8_t key_sta[KEY_SIZE] = {0};
+
+
+void KeyStaIn(uint8_t num, uint8_t sta){
+	if(num >= KEY_SIZE)return;
+	if(sta != DISABLE){
+		if(press_time[num] > KEY_TIME_TRIG){
+			release_time[num] = 0;
+			key_sta[num] = 1;
+		}
+		else{
+			press_time[num] ++;
+		}
+	}
+	else{
+		if(release_time[num] > KEY_TIME_TRIG){
+			press_time[num] = 0;
+			key_sta[num] = 0;
+		}
+		else{
+			release_time[num] ++;
+		}
+	}
+}
+
+uint8_t output_negative = DISABLE;
+
+void out_put_negitve(void){
+	
+	if(output_negative == DISABLE){
+		output_negative = ENABLE;
+	
+		need_disp_str_changed = 1;
+		need_disp_str = 1;
+
+		p_disp_str1 = disp_negative;
+		len_disp_str1 = sizeof(disp_negative)/2;
+		
+	}
+	else{
+		output_negative = DISABLE;
+	
+		need_disp_str_changed = 1;
+		need_disp_str = 1;
+
+		p_disp_str1 = disp_positive;
+		len_disp_str1 = sizeof(disp_positive)/2;
+	}
+	
 }
 
 
-void HID_Task(void){
-    
+//key_output();
+//Change_Mode();
+//
+
+void Key_Task(void){
+	static uint8_t done[7] = {0};
+	
+	/**/
+	if(key_sta[KEY_OUTPUT]){
+		if(done[KEY_OUTPUT] == 0){
+			key_do_output();
+			done[KEY_OUTPUT] = 1;
+		}
+	}
+	else{
+		done[KEY_OUTPUT] = 0;
+	}
+	
+	/**/
+	if(key_sta[KEY_PULSE]){
+		if(done[KEY_PULSE] == 0){
+			key_do_pulse(0);
+		}
+		if(done[KEY_PULSE] == 60){
+			key_do_pulse(1);
+		}
+		if(done[KEY_PULSE] < 128)
+			done[KEY_PULSE] ++;
+	}
+	else{
+		done[KEY_PULSE] = 0;
+	}
+	
+	/**/
+	if(key_sta[KEY_FREQ]){
+		if(done[KEY_FREQ] == 0){
+			key_do_freq(0);
+		}
+		if(done[KEY_FREQ] == 60){
+			key_do_freq(1);
+		}
+		if(done[KEY_FREQ] < 128)
+			done[KEY_FREQ] ++;
+	}
+	else{
+		done[KEY_FREQ] = 0;
+	}
+	
+	/**/
+	if(key_sta[KEY_VOLT]){
+		if(done[KEY_VOLT] == 0){
+			key_do_volt(0);
+		}
+		if(done[KEY_VOLT] == 60){
+			key_do_volt(1);
+		}
+		if(done[KEY_VOLT] < 128)
+			done[KEY_VOLT] ++;
+	}
+	else{
+		done[KEY_VOLT] = 0;
+	}
+	
+	/**/
+	if(key_sta[KEY_MOVE]){
+		if(done[KEY_MOVE] == 0){
+			key_do_move(0);
+		}
+		if(done[KEY_MOVE] == 60){
+			key_do_move(1);
+		}
+		if(done[KEY_MOVE] < 128)
+			done[KEY_MOVE] ++;
+	}
+	else{
+		done[KEY_MOVE] = 0;
+	}
+	
+	/**/
+	if(done[KEY_ADD] == 0xFF || done[KEY_SUB] == 0xFF){
+		
+		if(key_sta[KEY_SUB] == 0 && key_sta[KEY_ADD] == 0){
+			done[KEY_ADD] = 0;
+			done[KEY_SUB] = 0;
+		}
+	}
+	else{
+		
+		if(key_sta[KEY_ADD]){
+			if(done[KEY_ADD] == 0 || done[KEY_ADD] == 50)
+				key_do_add();
+			done[KEY_ADD] ++;
+			if(done[KEY_ADD] == 60)done[KEY_ADD] = 50;
+		}
+		else{
+			done[KEY_ADD] = 0;
+		}
+		
+		if(key_sta[KEY_SUB]){
+			if(done[KEY_SUB] == 0 || done[KEY_SUB] == 50)
+				key_do_sub();
+			done[KEY_SUB] ++;
+			if(done[KEY_SUB] == 60)done[KEY_SUB] = 50;
+		}
+		else{
+			done[KEY_SUB] = 0;
+		}
+		
+		if(key_sta[KEY_SUB] && key_sta[KEY_ADD]){
+			//负脉冲输出切换
+			done[KEY_ADD] = 0xFF;
+			done[KEY_SUB] = 0xFF;
+			out_put_negitve();
+			set_output(DISABLE);
+		}
+	}
+	
+	//约束数值：
+	set_limit();
 }
 
 
-
-
-
-uint32_t freq = 50,pulse = 100; 
-uint8_t need_fresh = 0;
 
 /* USER CODE END 0 */
 
@@ -571,7 +609,7 @@ int main(void)
 	HAL_TIM_Base_Start_IT(&htimSTP);
 	
 	//
-	output_off();
+	set_output(DISABLE);
 	
 	HAL_Delay(500);
 
@@ -581,11 +619,7 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-      if(need_fresh){
-          need_fresh = 0;
-//          TIM_ConfigFrequencyOptimized(freq / 10.0f, pulse);
-		  Change_Mode();
-      }
+	  Key_Task();
 	  disp_task();
 	  HAL_Delay(10);
 
@@ -1097,6 +1131,69 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+
+/**
+ * @brief  重新配置 TIM1 输出极性（主通道和互补通道）
+ * @param  htim: TIM1 的句柄（TIM_HandleTypeDef*）
+ * @param  reverse: true=反向（低有效），false=正常（高有效）
+ * @retval HAL 状态（HAL_OK / HAL_ERROR）
+ */
+HAL_StatusTypeDef TIM1_ReversePolarity(uint8_t reverse) {
+    TIM_OC_InitTypeDef sConfigOC = {0};
+
+
+	sConfigOC.OCMode = TIM_OCMODE_PWM1;
+	sConfigOC.Pulse = 100;
+	sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+	sConfigOC.OCNPolarity = TIM_OCNPOLARITY_HIGH;
+	sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+	sConfigOC.OCIdleState = TIM_OCIDLESTATE_RESET;
+	sConfigOC.OCNIdleState = TIM_OCNIDLESTATE_RESET;
+
+    // 根据 reverse 参数设置极性
+    if (reverse) {
+        sConfigOC.OCPolarity = TIM_OCPOLARITY_LOW;    // 主输出低有效
+        sConfigOC.OCNPolarity = TIM_OCNPOLARITY_LOW;  // 互补输出低有效
+    } else {
+        sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;    // 主输出高有效
+        sConfigOC.OCNPolarity = TIM_OCNPOLARITY_HIGH;  // 互补输出高有效
+    }
+
+    // 重新配置 PWM 通道（仅更新极性）
+    if (HAL_TIM_PWM_ConfigChannel(&htim1, &sConfigOC, TIM_CHANNEL_1) != HAL_OK) {
+        return HAL_ERROR;
+    }
+
+    return HAL_OK;
+}
+
 
 
 /**
@@ -1145,43 +1242,45 @@ HAL_StatusTypeDef HAL_TIM_PWM_PWMN_Start(TIM_HandleTypeDef *htim, uint32_t Chann
   /* Check the parameters */
   assert_param(IS_TIM_CCX_INSTANCE(htim->Instance, Channel));
 
-  /* Check the TIM channel state */
-  if (TIM_CHANNEL_STATE_GET(htim, Channel) != HAL_TIM_CHANNEL_STATE_READY)
-  {
-    return HAL_ERROR;
-  }
-	
-  /* Check the TIM complementary channel state */
-  if (TIM_CHANNEL_N_STATE_GET(htim, Channel) != HAL_TIM_CHANNEL_STATE_READY)
-  {
-    return HAL_ERROR;
-  }
+//  /* Check the TIM channel state */
+//  if (TIM_CHANNEL_STATE_GET(htim, Channel) != HAL_TIM_CHANNEL_STATE_READY)
+//  {
+//    return HAL_ERROR;
+//  }
+//	
+//  /* Check the TIM complementary channel state */
+//  if (TIM_CHANNEL_N_STATE_GET(htim, Channel) != HAL_TIM_CHANNEL_STATE_READY)
+//  {
+//    return HAL_ERROR;
+//  }
 
-  /* Set the TIM channel state */
-  TIM_CHANNEL_STATE_SET(htim, Channel, HAL_TIM_CHANNEL_STATE_BUSY);
-	
-	/* Set the TIM complementary channel state */
-  TIM_CHANNEL_N_STATE_SET(htim, Channel, HAL_TIM_CHANNEL_STATE_BUSY);
+//  /* Set the TIM channel state */
+//  TIM_CHANNEL_STATE_SET(htim, Channel, HAL_TIM_CHANNEL_STATE_BUSY);
+//	
+//	/* Set the TIM complementary channel state */
+//  TIM_CHANNEL_N_STATE_SET(htim, Channel, HAL_TIM_CHANNEL_STATE_BUSY);
 
   /* Enable the Capture compare channel */
   TIM_CCxChannelCmd(htim->Instance, Channel, TIM_CCx_ENABLE);
 	TIM_CCxNChannelCmd_mine(htim->Instance, Channel, TIM_CCxN_ENABLE);
 	
-	__HAL_TIM_MOE_ENABLE(htim);
+//	__HAL_TIM_MOE_ENABLE(htim);
+	htim->Instance->BDTR |= TIM_BDTR_MOE;
 
   /* Enable the Peripheral, except in trigger mode where enable is automatically done with trigger */
-  if (IS_TIM_SLAVE_INSTANCE(htim->Instance))
-  {
-    tmpsmcr = htim->Instance->SMCR & TIM_SMCR_SMS;
-    if (!IS_TIM_SLAVEMODE_TRIGGER_ENABLED(tmpsmcr))
-    {
-      __HAL_TIM_ENABLE(htim);
-    }
-  }
-  else
-  {
-    __HAL_TIM_ENABLE(htim);
-  }
+//  if (IS_TIM_SLAVE_INSTANCE(htim->Instance))
+//  {
+//    tmpsmcr = htim->Instance->SMCR & TIM_SMCR_SMS;
+//    if (!IS_TIM_SLAVEMODE_TRIGGER_ENABLED(tmpsmcr))
+//    {
+//      __HAL_TIM_ENABLE(htim);
+//    }
+//  }
+//  else
+//  {
+//    __HAL_TIM_ENABLE(htim);
+//  }
+htim->Instance->CR1 |= (TIM_CR1_CEN);
 
   /* Return function status */
   return HAL_OK;
@@ -1210,16 +1309,18 @@ HAL_StatusTypeDef HAL_TIM_PWM_PWMN_Stop(TIM_HandleTypeDef *htim, uint32_t Channe
 	
   TIM_CCxChannelCmd(htim->Instance, Channel, TIM_CCx_DISABLE);
 	
-  __HAL_TIM_MOE_DISABLE(htim);
+//  __HAL_TIM_MOE_DISABLE(htim);
+	  htim->Instance->BDTR &= ~(TIM_BDTR_MOE);
 
   /* Disable the Peripheral */
-  __HAL_TIM_DISABLE(htim);
+//  __HAL_TIM_DISABLE(htim);
+	  htim->Instance->CR1 &= ~(TIM_CR1_CEN);
+	
+//  /* Set the TIM complementary channel state */
+//  TIM_CHANNEL_N_STATE_SET(htim, Channel, HAL_TIM_CHANNEL_STATE_READY);
 
-  /* Set the TIM complementary channel state */
-  TIM_CHANNEL_N_STATE_SET(htim, Channel, HAL_TIM_CHANNEL_STATE_READY);
-
-  /* Set the TIM channel state */
-  TIM_CHANNEL_STATE_SET(htim, Channel, HAL_TIM_CHANNEL_STATE_READY);
+//  /* Set the TIM channel state */
+//  TIM_CHANNEL_STATE_SET(htim, Channel, HAL_TIM_CHANNEL_STATE_READY);
 
   /* Return function status */
   return HAL_OK;
@@ -1245,23 +1346,23 @@ HAL_StatusTypeDef HAL_TIM_PWM_PWMN_Start_IT(TIM_HandleTypeDef *htim, uint32_t Ch
   /* Check the parameters */
   assert_param(IS_TIM_CCX_INSTANCE(htim->Instance, Channel));
 
-  /* Check the TIM channel state */
-  if (TIM_CHANNEL_STATE_GET(htim, Channel) != HAL_TIM_CHANNEL_STATE_READY)
-  {
-    return HAL_ERROR;
-  }
-	
-  /* Check the TIM complementary channel state */
-  if (TIM_CHANNEL_N_STATE_GET(htim, Channel) != HAL_TIM_CHANNEL_STATE_READY)
-  {
-    return HAL_ERROR;
-  }
-	
-  /* Set the TIM channel state */
-  TIM_CHANNEL_STATE_SET(htim, Channel, HAL_TIM_CHANNEL_STATE_BUSY);
-	
-  /* Set the TIM complementary channel state */
-  TIM_CHANNEL_N_STATE_SET(htim, Channel, HAL_TIM_CHANNEL_STATE_BUSY);
+//  /* Check the TIM channel state */
+//  if (TIM_CHANNEL_STATE_GET(htim, Channel) != HAL_TIM_CHANNEL_STATE_READY)
+//  {
+//    return HAL_ERROR;
+//  }
+//	
+//  /* Check the TIM complementary channel state */
+//  if (TIM_CHANNEL_N_STATE_GET(htim, Channel) != HAL_TIM_CHANNEL_STATE_READY)
+//  {
+//    return HAL_ERROR;
+//  }
+//	
+//  /* Set the TIM channel state */
+//  TIM_CHANNEL_STATE_SET(htim, Channel, HAL_TIM_CHANNEL_STATE_BUSY);
+//	
+//  /* Set the TIM complementary channel state */
+//  TIM_CHANNEL_N_STATE_SET(htim, Channel, HAL_TIM_CHANNEL_STATE_BUSY);
 
   switch (Channel)
   {
@@ -1306,21 +1407,23 @@ HAL_StatusTypeDef HAL_TIM_PWM_PWMN_Start_IT(TIM_HandleTypeDef *htim, uint32_t Ch
     /* Enable the complementary PWM output  */
     TIM_CCxNChannelCmd_mine(htim->Instance, Channel, TIM_CCxN_ENABLE);
     
-		__HAL_TIM_MOE_ENABLE(htim);
+//		__HAL_TIM_MOE_ENABLE(htim);
+	htim->Instance->BDTR |= TIM_BDTR_MOE;
 
-    /* Enable the Peripheral, except in trigger mode where enable is automatically done with trigger */
-    if (IS_TIM_SLAVE_INSTANCE(htim->Instance))
-    {
-      tmpsmcr = htim->Instance->SMCR & TIM_SMCR_SMS;
-      if (!IS_TIM_SLAVEMODE_TRIGGER_ENABLED(tmpsmcr))
-      {
-        __HAL_TIM_ENABLE(htim);
-      }
-    }
-    else
-    {
-      __HAL_TIM_ENABLE(htim);
-    }
+//    /* Enable the Peripheral, except in trigger mode where enable is automatically done with trigger */
+//    if (IS_TIM_SLAVE_INSTANCE(htim->Instance))
+//    {
+//      tmpsmcr = htim->Instance->SMCR & TIM_SMCR_SMS;
+//      if (!IS_TIM_SLAVEMODE_TRIGGER_ENABLED(tmpsmcr))
+//      {
+//        __HAL_TIM_ENABLE(htim);
+//      }
+//    }
+//    else
+//    {
+//      __HAL_TIM_ENABLE(htim);
+//    }
+	htim->Instance->CR1 |= (TIM_CR1_CEN);
   }
 
   /* Return function status */
@@ -1389,16 +1492,18 @@ HAL_StatusTypeDef HAL_TIM_PWM_PWMN_Stop_IT(TIM_HandleTypeDef *htim, uint32_t Cha
     TIM_CCxChannelCmd(htim->Instance, Channel, TIM_CCx_DISABLE);
 		
 		/* Disable the Main Output */
-		__HAL_TIM_MOE_DISABLE(htim);
+	  htim->Instance->BDTR &= ~(TIM_BDTR_MOE);
+//		__HAL_TIM_MOE_DISABLE(htim);
 
     /* Disable the Peripheral */
-    __HAL_TIM_DISABLE(htim);
+	  htim->Instance->CR1 &= ~(TIM_CR1_CEN);
+//    __HAL_TIM_DISABLE(htim);
 
-    /* Set the TIM complementary channel state */
-    TIM_CHANNEL_N_STATE_SET(htim, Channel, HAL_TIM_CHANNEL_STATE_READY);
+//    /* Set the TIM complementary channel state */
+//    TIM_CHANNEL_N_STATE_SET(htim, Channel, HAL_TIM_CHANNEL_STATE_READY);
 
-    /* Set the TIM channel state */
-    TIM_CHANNEL_STATE_SET(htim, Channel, HAL_TIM_CHANNEL_STATE_READY);
+//    /* Set the TIM channel state */
+//    TIM_CHANNEL_STATE_SET(htim, Channel, HAL_TIM_CHANNEL_STATE_READY);
   }
 
   /* Return function status */
@@ -1511,11 +1616,262 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
 	adc_calc();
 }
 
+volatile uint8_t step_str = 0;
 
-void HAL_IncTick(void)
-{
-  uwTick += (uint32_t)uwTickFreq;
+//如果返回1，则说明已经显示完成
+// run in 100ms
+uint8_t disp_str_step(const uint16_t* str,uint8_t len){
+	if(len == 0){
+		memset(g_ram,0,12);
+		if(step_str >= 2){
+			step_str = 0;
+			return 1;
+		}
+	}
+	else if(len<=6){
+		memset(g_ram,0,12);
+		if(step_str <= 15){
+			for(uint8_t i=0;i<len;i++){
+				g_ram[i+6-len] = str[i];
+			}
+		}
+		if(step_str >= 17){
+			step_str = 0;
+			return 1;
+		}
+	}
+	else{
+		memset(g_ram,0,12);
+		if(step_str < 7){
+			for(uint8_t i=0;i<6;i++){
+				g_ram[i] = str[i];
+			}
+		}
+		else if(step_str - 7 < len-6){
+			for(uint8_t i=0;i<6;i++){
+				g_ram[i] = str[step_str - 7+i+1];
+			}
+		}
+		else if(step_str < 7+8+len-6){
+			for(uint8_t i=0;i<6;i++){
+				g_ram[i] = str[len-6+i];
+			}
+		}
+		else if(step_str < 7+8+len-6+2){
+		}
+		else{
+			step_str = 0;
+			return 1;
+		}
+	}
+	step_str++;
+	return 0;
 }
+
+const uint16_t disp_number_table[10] = {DISP_NUM_0,DISP_NUM_1,DISP_NUM_2,DISP_NUM_3,DISP_NUM_4,DISP_NUM_5,DISP_NUM_6,DISP_NUM_7,DISP_NUM_8,DISP_NUM_9};
+
+void disp_num(uint32_t num,uint8_t len,uint8_t pos,uint8_t e10){
+	uint16_t temp[6];
+	
+	if(pos >= 6 || e10 >= 6 || len > 6)
+		return;
+	
+	temp[0] = disp_number_table[num/100000%10];
+	temp[1] = disp_number_table[num/10000%10];
+	temp[2] = disp_number_table[num/1000%10];
+	temp[3] = disp_number_table[num/100%10];
+	temp[4] = disp_number_table[num/10%10];
+	temp[5] = disp_number_table[num%10];
+	
+	if(e10)
+		temp[5-e10] |= 0x4000;
+	
+	for(uint8_t i=0;i<len;i++){
+		g_ram[pos+i] = temp[i+6-len];
+	}
+}
+
+void disp_num_hid(uint32_t num,uint8_t len,uint8_t pos,uint8_t e10,uint32_t hidd){
+	uint16_t temp[6];
+	
+	if(pos >= 6 || e10 >= 6 || len > 6)
+		return;
+	
+	temp[0] = disp_number_table[num/100000%10];
+	temp[1] = disp_number_table[num/10000%10];
+	temp[2] = disp_number_table[num/1000%10];
+	temp[3] = disp_number_table[num/100%10];
+	temp[4] = disp_number_table[num/10%10];
+	temp[5] = disp_number_table[num%10];
+	if(hidd == 100000)temp[0] = 0;
+	if(hidd == 10000)temp[1] = 0;
+	if(hidd == 1000)temp[2] = 0;
+	if(hidd == 100)temp[3] = 0;
+	if(hidd == 10)temp[4] = 0;
+	if(hidd == 1)temp[5] = 0;
+	
+	if(e10)
+		temp[5-e10] |= 0x4000;
+	
+	for(uint8_t i=0;i<len;i++){
+		g_ram[pos+i] = temp[i+6-len];
+	}
+}
+
+void disp_on(void){
+	while(!disp_str_step(disp_normal_mode,sizeof(disp_normal_mode)/2))
+		HAL_Delay(100);
+	
+	g_ram[0] = DISP_CHAR_B;
+	g_ram[1] = DISP_CHAR_A;
+	g_ram[2] = DISP_CHAR_T;
+	g_ram[5] = DISP_CHAR_V;
+	
+	for(uint8_t i=0;i<10;i++){
+		disp_num((uint32_t)((adc_value[BAT_CH]+0.05)*10),2,3,1);
+		HAL_Delay(100);
+	}
+	
+	memset(g_ram,0,12);
+	HAL_Delay(200);
+}
+
+
+
+uint8_t set_FREQ_unit = SET_FREQ_HZ;
+uint8_t set_PULSE_unit = SET_PULSE_US;
+uint8_t set_VOLT_unit = SET_VOLT_MV;
+
+int16_t set_FREQ_num = 500;	//50.0Hz
+int16_t set_PULSE_num = 50;	//5.0uS
+int16_t set_VOLT_num = 500;	//500mV
+
+uint8_t disp_set_unit = SET_FREQ_HZ;
+
+uint8_t need_disp_str = 0;
+uint8_t need_disp_str_changed = 0;
+const uint16_t  *p_disp_str1;
+const uint16_t  *p_disp_str2;
+uint8_t  len_disp_str1;
+uint8_t  len_disp_str2;
+
+uint16_t set_pos = 0;
+
+void disp_task(void){
+	static uint16_t str_timer = 0;
+	static uint8_t high_voltage_counter = 0;
+	static double high_voltage_filter = 0;
+	static double high_voltage_out = 0;
+	static uint8_t set_pos_count = 0;
+	uint16_t set_pos_buf = 0;
+	
+	/*显示电压频率降低*/
+	if(high_voltage_counter < 20){
+		high_voltage_filter += adc_value[HV_CH];
+		high_voltage_counter++;
+	}
+	else{
+		high_voltage_out = high_voltage_filter/20+0.5;
+		high_voltage_filter = 0;
+		high_voltage_counter = 0;
+	}
+	
+	/*闪烁位*/
+	if(set_pos_count < 25){
+		set_pos_count++;
+	}
+	else{
+		set_pos_count = 0;
+	}
+	if(set_pos_count > 20)
+		set_pos_buf = set_pos;
+	
+	
+	/*显示提示，最多支持*/
+	if(need_disp_str > 2)need_disp_str = 0;
+	
+	//切换模式时候显示的字符串提示
+	if(need_disp_str){
+		if(need_disp_str_changed){
+			need_disp_str_changed = 0;
+			str_timer = 0;
+			step_str = 0;
+		}
+		if((str_timer % 10) == 0){
+			//显示字符串
+			if(need_disp_str == 2){
+				if(disp_str_step(p_disp_str2,len_disp_str2)){
+					need_disp_str--;
+				}
+			}
+			else if(need_disp_str == 1){
+				if(disp_str_step(p_disp_str1,len_disp_str1)){
+					need_disp_str--;
+				}
+			}
+			else{
+				need_disp_str = 0;
+				str_timer = 0;
+			}
+		}
+		str_timer++;
+		return;
+	}
+	str_timer = 0;
+	
+	/*正常显示参数*/
+    switch(disp_set_unit){
+        case SET_FREQ_HZ:
+			memcpy(g_ram,disp_HZ,12);
+			disp_num_hid(set_FREQ_num,4,0,1,set_pos_buf);
+            break;
+		
+        case SET_FREQ_KHZ:
+			memcpy(g_ram,disp_KHZ,12);
+			disp_num_hid(set_FREQ_num,3,0,0,set_pos_buf);
+            break;
+		
+        case SET_FREQ_MHZ:
+			memcpy(g_ram,disp_MHZ,12);
+			disp_num_hid(set_FREQ_num,3,0,2,set_pos_buf);
+            break;
+		
+        case SET_PULSE_NS:
+			memcpy(g_ram,disp_NS,12);
+			disp_num_hid(set_PULSE_num,4,0,0,set_pos_buf);
+            break;
+		
+        case SET_PULSE_US:
+			memcpy(g_ram,disp_US,12);
+			disp_num_hid(set_PULSE_num,4,0,1,set_pos_buf);
+            break;
+		
+        case SET_VOLT_MV:
+			memcpy(g_ram,disp_MV,12);
+			disp_num_hid(set_VOLT_num,4,0,0,set_pos_buf);
+            break;
+		
+        case SET_VOLT_V:
+			memcpy(g_ram,disp_V,12);
+			if(high_voltage_out < 10)
+				disp_num(high_voltage_out,1,3,0);
+			else if(high_voltage_out < 100)
+				disp_num(high_voltage_out,2,2,0);
+			else if(high_voltage_out < 1000)
+				disp_num(high_voltage_out,3,1,0);
+			else
+				disp_num(high_voltage_out,4,0,0);
+            break;
+		
+        default:
+			;
+    }
+	
+	
+	disp_output_sta_task();
+}
+
+/*DAC 驱动*/
 
 volatile double adc_value[ADC_CHANNEL_NUM] = {0};
 
@@ -1544,13 +1900,23 @@ void adc_calc(void){
     adc_value[1] = (double)(temp1 * 1212) / (double)temp3;
     adc_value[2] = (double)(temp2 * 1.212) / (double)temp3;
     
-	if(dac_sta)
+	if(dac_sta){
+		//adc闭环函数
 		dac_feedback();
+	}
 }
 
 
 void dac_set_volt(uint16_t volt_mv){
+	static uint16_t volt_mv_bak = 0;
     uint32_t temp;
+	
+	//记录变化
+	if(volt_mv == volt_mv_bak){
+		return;
+	}
+	volt_mv_bak = volt_mv;
+	
     if(volt_mv == 0){
         htimDAC.Instance->CCR1 = 0;
         dac_sta = DISABLE;
@@ -1585,22 +1951,472 @@ void dac_feedback(void){
 	}
 }
 
-void HAL_Delay(uint32_t Delay)
-{
-  uint32_t tickstart = HAL_GetTick();
-  uint32_t wait = Delay;
 
-  /* Add a freq to guarantee minimum wait */
-  if (wait < HAL_MAX_DELAY)
-  {
-    wait += (uint32_t)(uwTickFreq);
-  }
+/*开启输出*/
+uint8_t output_sta = DISABLE;
 
-  while ((HAL_GetTick() - tickstart) < wait)
-  {
-	  if(0)break;
-  }
+void set_output(uint8_t sta){
+	if(sta == DISABLE){
+		dac_set_volt(0);
+		HAL_TIM_Base_Stop_IT(&htimTIM);
+		HAL_TIM_PWM_PWMN_Stop(&htimPWM, TIM_CHANNEL_1);
+		HAL_TIM_PWM_PWMN_Stop_IT(&htimPWM, TIM_CHANNEL_1);
+		output_sta = DISABLE;
+	}
+	else if(sta == ENABLE){
+		//设置输出mV数字
+		dac_set_volt(set_VOLT_num);
+		//设置频率输出
+		uint32_t freq;
+		uint32_t pulse;
+		
+		if(set_FREQ_unit == SET_FREQ_KHZ){
+			freq = set_FREQ_num*10000;
+		}
+		else if(set_FREQ_unit == SET_FREQ_MHZ){
+			freq = set_FREQ_num*100000;
+		}
+		else{
+			freq = set_FREQ_num;
+		}
+		
+		if(set_PULSE_unit == SET_PULSE_US){//us
+			pulse = set_PULSE_num*100;
+		}
+		else{//ns
+			pulse = set_PULSE_num;
+		}
+		
+		TIM_ConfigFrequencyOptimized((float)freq / 10.0f, pulse);
+		output_sta = ENABLE;
+	}
 }
+
+
+//10ms
+void disp_output_sta_task(void){
+	static uint8_t counter = 0;
+	if(output_sta == ENABLE){
+		counter++;
+		if(counter < 5)g_ram[5] |= 0x4000;
+		else g_ram[5] &= ~0x4000;
+		if(counter >= 10)
+			counter = 0;
+	}
+	else{
+		g_ram[5] &= ~0x4000;
+		counter = 0;
+	}
+}
+
+void key_do_output(void){
+	if(output_sta == DISABLE){
+		set_pos = 0;
+		set_output(ENABLE);
+	}
+	else
+		set_output(DISABLE);
+}
+
+void key_do_pulse(uint8_t press_long){
+	
+	if(press_long){
+		//如果是长按，切换单位
+		if(set_PULSE_unit == SET_PULSE_NS){
+			 set_PULSE_unit = SET_PULSE_US;
+		}
+		else if(set_PULSE_unit == SET_PULSE_US){
+			 set_PULSE_unit = SET_PULSE_NS;
+		}
+		if(output_sta == ENABLE)
+			set_output(DISABLE);
+	}
+	
+	if(disp_set_unit != set_PULSE_unit){
+		disp_set_unit = set_PULSE_unit;
+		set_pos = 0;
+	}
+}
+
+void key_do_volt(uint8_t press_long){
+	
+	if(press_long){
+		if(set_VOLT_unit == SET_VOLT_MV){
+			 set_VOLT_unit = SET_VOLT_V;
+		}
+		else if(set_VOLT_unit == SET_VOLT_V){
+			 set_VOLT_unit = SET_VOLT_MV;
+		}
+		if(output_sta == ENABLE)
+			set_output(DISABLE);
+	}
+	
+	if(disp_set_unit != set_VOLT_unit){
+		disp_set_unit = set_VOLT_unit;
+		set_pos = 0;
+	}
+}
+
+void key_do_freq(uint8_t press_long){
+	if(press_long){
+		if(set_FREQ_unit == SET_FREQ_HZ){
+			 set_FREQ_unit = SET_FREQ_KHZ;
+		}
+		else if(set_FREQ_unit == SET_FREQ_KHZ){
+			 set_FREQ_unit = SET_FREQ_MHZ;
+		}
+		else if(set_FREQ_unit == SET_FREQ_MHZ){
+			 set_FREQ_unit = SET_FREQ_HZ;
+		}
+		if(output_sta == ENABLE)
+			set_output(DISABLE);
+	}
+	
+	if(disp_set_unit != set_FREQ_unit){
+		disp_set_unit = set_FREQ_unit;
+		set_pos = 0;
+	}
+}
+
+void key_do_move(uint8_t press_long){
+	if(press_long){
+		Change_Mode();
+		set_output(DISABLE);
+		set_pos = 0;
+	}
+	else{
+		switch (set_pos){
+			case 1000:
+				set_pos = 100;
+				break;
+			case 100:
+				set_pos = 10;
+				break;
+			case 10:
+				set_pos = 1;
+				break;
+			case 1:
+			default:
+				set_pos = 1000;
+				if(disp_set_unit == SET_FREQ_KHZ || disp_set_unit == SET_FREQ_MHZ)
+					set_pos = 100;
+		}
+	}
+}
+
+void key_do_add(void){
+	switch(disp_set_unit){
+		
+		case SET_FREQ_HZ:
+			if(set_FREQ_num + set_pos <= 9999)
+				set_FREQ_num += set_pos;
+			else
+				set_FREQ_num = 9999;
+			break;
+			
+		case SET_FREQ_KHZ:
+		case SET_FREQ_MHZ:
+			if(set_FREQ_num + set_pos <= 999)
+				set_FREQ_num += set_pos;
+			else
+				set_FREQ_num = 999;
+			break;
+			
+		case SET_PULSE_NS:
+			if(set_pos <= 10){
+				if(set_PULSE_num + 50 <= 9950)
+					set_PULSE_num += 50;
+				else
+					set_PULSE_num = 9950;
+			}
+			else{
+				if(set_PULSE_num + set_pos <= 9950)
+					set_PULSE_num += set_pos;
+				else
+					set_PULSE_num = 9950;
+			}
+			break;
+			
+		case SET_PULSE_US:
+			if(set_PULSE_num + set_pos <= 5000)
+				set_PULSE_num += set_pos;
+			else
+				set_PULSE_num = 5000;
+			break;
+			
+		case SET_VOLT_MV:
+			if(set_VOLT_num + set_pos <= 1000)
+				set_VOLT_num += set_pos;
+			else set_VOLT_num = 1000;
+			break;
+			
+		default:
+			;
+	}
+	if(output_sta == ENABLE && set_pos)
+		set_output(ENABLE);
+}
+
+void key_do_sub(void){
+	switch(disp_set_unit){
+		
+		case SET_FREQ_HZ:
+		case SET_FREQ_KHZ:
+		case SET_FREQ_MHZ:
+			if(set_FREQ_num - 1 > set_pos)
+				set_FREQ_num -= set_pos;
+			else
+				set_FREQ_num = 1;
+
+			break;
+			
+		case SET_PULSE_NS:
+			if(set_pos <= 10){
+				if(set_PULSE_num - 50 > 50)
+					set_PULSE_num -= 50;
+				else
+					set_PULSE_num = 50;
+			}
+			else{
+				if(set_PULSE_num - 50 > set_pos)
+					set_PULSE_num -= set_pos;
+				else
+					set_PULSE_num = 50;
+			}
+			
+			break;
+		case SET_PULSE_US:
+			if(set_PULSE_num - 1 > set_pos)
+				set_PULSE_num -= set_pos;
+			else
+				set_PULSE_num = 1;
+			break;
+			
+		case SET_VOLT_MV:
+			if(set_VOLT_num - 5 > set_pos)
+				set_VOLT_num -= set_pos;
+			else 
+				set_VOLT_num = 5;
+			break;
+		default:
+			;
+	}
+	if(output_sta == ENABLE && set_pos)
+		set_output(ENABLE);
+}
+
+void key_do_negt(void){
+}
+
+volatile uint8_t output_mode = MODE_NORMAL;
+
+/**
+  * @brief  配置PWM脉冲宽度，无需修改PSC和ARR
+  * @param  pulseWidth_ns: 期望脉冲宽度（纳秒）
+  * @retval HAL
+  */
+HAL_StatusTypeDef TIM_ConfigPulseWidth(TIM_HandleTypeDef *htim, uint32_t Channel, uint32_t pulseWidth_ns)
+{
+    // 获取当前定时器配置
+    uint32_t psc = htim->Instance->PSC;
+    uint32_t arr = htim->Instance->ARR; 
+    uint32_t timerClockFreq = HAL_RCC_GetHCLKFreq(); // 注意使用APB1定时器时钟频率时需根据实际情况调整
+    
+    // 计算定时器计数周期时间（纳秒）
+    float timerPeriod_ns = (1.0f / (timerClockFreq / (psc + 1))) * 1e9f;
+    
+    // 计算需要的CCR值
+    uint32_t ccr = (uint32_t)(pulseWidth_ns / timerPeriod_ns);
+    
+    // 确保CCR1小于ARR/2，保证占空比不超过50%
+    if (ccr > (arr / 2)) {
+        ccr = arr / 2;
+    }
+    
+    // 确保CCR值有效
+    if (ccr == 0) {
+        ccr = 1;  // 防止脉宽太短或太长
+    }
+    
+    // 设置CCR寄存器
+    switch (Channel) {
+        case TIM_CHANNEL_1:
+            htim->Instance->CCR1 = ccr;
+            break;
+        case TIM_CHANNEL_2:
+            htim->Instance->CCR2 = ccr;
+            break;
+        case TIM_CHANNEL_3:
+            htim->Instance->CCR3 = ccr;
+            break;
+        case TIM_CHANNEL_4:
+            htim->Instance->CCR4 = ccr;
+            break;
+        default:
+            return HAL_ERROR;
+    }
+    
+    return HAL_OK;
+}
+
+/**
+  * @brief  配置定时器输出指定频率，支持0.1Hz级精度优化
+  * @param  htim: 定时器句柄指针
+  * @param  desiredFreq: 期望生成的频率(Hz) (支持0.1Hz级精度)
+  * @retval HAL״̬
+  */
+HAL_StatusTypeDef TIM_ConfigFrequencyOptimized(
+                            float desiredFreq, 
+                            uint32_t pulseWidth_ns)
+{
+    // 检查输入参数有效性
+    if (desiredFreq <= 0.0f)
+    {
+        return HAL_ERROR;
+    }
+
+    uint32_t bestPsc = 0;
+    uint32_t bestArr = 0;
+    float minError = FLT_MAX;  // 初始化为最大浮点数
+    float actualFreq = 0.0f;
+    uint32_t timerClockFreq = HAL_RCC_GetHCLKFreq();
+    
+    // 计算期望的周期计数
+    float desiredPeriods = (float)timerClockFreq / desiredFreq;
+    
+    // 遍历寻找最优PSC和ARR组合
+    for (uint32_t psc = 0; psc <= 66000; psc+=6)
+    {
+        uint32_t arr = (uint32_t)(desiredPeriods / (psc + 1)) - 1;
+        
+        // 确保ARR在有效范围内
+        if (arr > 0xFFFF)
+            continue;
+        
+        // 计算实际频率和误差
+        actualFreq = (float)timerClockFreq / ((psc + 1) * (arr + 1));
+        float error = fabsf(actualFreq - desiredFreq);
+        
+        // 如果找到更精确的组合，更新最优值
+        if (error < minError)
+        {
+            minError = error;
+            bestPsc = psc;
+            bestArr = arr;
+            
+            // 如果误差已经足够小，提前退出循环
+            if (error < (desiredFreq * 0.0001f)) // 0.01%精度
+                break;
+        }
+    }
+    
+    // 检查是否找到有效解
+    if (bestArr == 0 && bestPsc == 0 && desiredFreq < ((float)timerClockFreq / (0xFFFFFFFF)))
+    {
+        // 处理低频情况
+        bestPsc = 0xFFFF;
+        bestArr = (uint32_t)((float)timerClockFreq / (desiredFreq * (bestPsc + 1))) - 1;
+        
+        if (bestArr > 0xFFFF)
+            return HAL_ERROR;
+    }
+    
+    
+    // 配置定时器
+    HAL_TIM_Base_Stop_IT(&htimTIM);
+    HAL_TIM_PWM_PWMN_Stop(&htimPWM, TIM_CHANNEL_1);
+    HAL_TIM_PWM_PWMN_Stop_IT(&htimPWM, TIM_CHANNEL_1);
+	
+	HAL_TIM_Base_Init(&htimTIM);
+	
+    HAL_Delay(1);
+	
+//	TIM1_ReversePolarity(0);
+		
+		
+		if(output_mode == MODE_SINGEL_BURST)
+		{
+			if(bestPsc == 0)
+			{
+				htim1.Instance->RCR = 100-1;
+				if (HAL_TIM_OnePulse_Init(&htimPWM, TIM_OPMODE_SINGLE) != HAL_OK)
+				{
+						Error_Handler();
+				}
+				
+				__HAL_TIM_SET_PRESCALER(&htimPWM, 0);
+				__HAL_TIM_SET_AUTORELOAD(&htimPWM, bestArr);
+				
+				TIM_ConfigPulseWidth(&htimPWM, TIM_CHANNEL_1, pulseWidth_ns);
+				
+				HAL_TIM_PWM_PWMN_Start(&htim1, TIM_CHANNEL_1);
+			}
+			else
+			{
+				return HAL_ERROR;
+			}
+		}
+		else if(output_mode == MODE_REPEAT_BURST)
+		{
+			if(bestPsc == 0)
+			{
+				htimPWM.Instance->RCR = 100-1;
+				if (HAL_TIM_OnePulse_Init(&htimPWM, TIM_OPMODE_SINGLE) != HAL_OK)
+				{
+						Error_Handler();
+				}
+				__HAL_TIM_SET_PRESCALER(&htimPWM, 0);
+				__HAL_TIM_SET_AUTORELOAD(&htimPWM, bestArr);
+				
+				TIM_ConfigPulseWidth(&htimPWM, TIM_CHANNEL_1, pulseWidth_ns);
+				
+				__HAL_TIM_SET_PRESCALER(&htimTIM, 60000-1);
+				__HAL_TIM_SET_AUTORELOAD(&htimTIM, 1000-1);
+				
+				HAL_TIM_Base_Start_IT(&htimTIM);
+			}
+			else
+			{
+				return HAL_ERROR;
+			}
+		}
+		else
+		{
+			htimPWM.Instance->RCR = 0;
+			if (HAL_TIM_OnePulse_Init(&htimPWM, TIM_OPMODE_REPETITIVE) != HAL_OK)
+			{
+					Error_Handler();
+			}
+			if(bestPsc == 0)
+			{
+					__HAL_TIM_SET_PRESCALER(&htimPWM, 0);
+					__HAL_TIM_SET_AUTORELOAD(&htimPWM, bestArr);
+					
+					TIM_ConfigPulseWidth(&htimPWM, TIM_CHANNEL_1, pulseWidth_ns);
+					
+					HAL_TIM_PWM_PWMN_Start(&htimPWM, TIM_CHANNEL_1);
+			}
+			else
+			{
+					__HAL_TIM_SET_PRESCALER(&htimTIM, bestPsc);
+					__HAL_TIM_SET_AUTORELOAD(&htimTIM, bestArr);
+				
+					__HAL_TIM_SET_PRESCALER(&htimPWM, 0);
+					__HAL_TIM_SET_AUTORELOAD(&htimPWM, 60000-1);
+					
+					TIM_ConfigPulseWidth(&htimPWM, TIM_CHANNEL_1, pulseWidth_ns);
+					
+					__HAL_TIM_SET_AUTORELOAD(&htimPWM, htimPWM.Instance->CCR1+10000);
+					
+					HAL_TIM_Base_Start_IT(&htimTIM);
+			}
+		}
+		
+
+    
+    return HAL_OK;
+}
+
 
 /* USER CODE END 4 */
 

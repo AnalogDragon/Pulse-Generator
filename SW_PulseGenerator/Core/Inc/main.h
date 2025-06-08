@@ -52,6 +52,8 @@ HAL_StatusTypeDef HAL_TIM_PWM_PWMN_Start_IT(TIM_HandleTypeDef *htim, uint32_t Ch
 HAL_StatusTypeDef HAL_TIM_PWM_PWMN_Stop_IT(TIM_HandleTypeDef *htim, uint32_t Channel);
 
 void led_task(void);
+void KeyStaIn(uint8_t num, uint8_t sta);
+
 
 /* USER CODE END EM */
 
@@ -132,7 +134,6 @@ void Error_Handler(void);
 #define MODE_REPEAT_BURST 	0xBB
 
 extern volatile uint8_t output_mode;
-extern volatile uint8_t pulse_group_output;
 
 #define DISP_NUM_0  0x003F
 #define DISP_NUM_1  0x0406
@@ -164,7 +165,7 @@ extern volatile uint8_t pulse_group_output;
 #define DISP_CHAR_P	0x00F3
 #define DISP_CHAR_Q	0x083F
 #define DISP_CHAR_R	0x08F3
-#define DISP_CHAR_S	0x0909
+#define DISP_CHAR_S	0x00ED
 #define DISP_CHAR_T	0x1201
 #define DISP_CHAR_U	0x003E
 #define DISP_CHAR_V	0x2430
@@ -172,6 +173,10 @@ extern volatile uint8_t pulse_group_output;
 #define DISP_CHAR_X	0x2D00
 #define DISP_CHAR_Y	0x1500
 #define DISP_CHAR_Z	0x2409
+
+#define DISP_CHAR_u	0x001C
+#define DISP_CHAR_n	0x00D4
+#define DISP_CHAR_m	0x10D4
 
 void adc_switch(uint8_t state);
 
@@ -186,6 +191,25 @@ void adc_switch(uint8_t state);
 extern volatile uint16_t adc_buffer[ADC_BUFFER_SIZE][ADC_CHANNEL_NUM];
 
 extern volatile double adc_value[ADC_CHANNEL_NUM];
+extern uint8_t output_sta;
+
+#define KEY_ADD		0
+#define KEY_SUB		1
+#define KEY_MOVE	2
+#define KEY_PULSE	3
+#define KEY_FREQ	4
+#define KEY_VOLT	5
+#define KEY_OUTPUT	6
+
+#define SET_FREQ_HZ 	0
+#define SET_FREQ_KHZ 	1
+#define SET_FREQ_MHZ 	2
+
+#define SET_PULSE_NS 	3
+#define SET_PULSE_US 	4
+
+#define SET_VOLT_MV 	5
+#define SET_VOLT_V 		6
 
 /* USER CODE END Private defines */
 

@@ -134,7 +134,13 @@ void SysTick_Handler(void)
   /* USER CODE END SysTick_IRQn 0 */
   HAL_IncTick();
   /* USER CODE BEGIN SysTick_IRQn 1 */
-
+	KeyStaIn(KEY_ADD,	(key_add_GPIO_Port->IDR & key_add_Pin) == 0x00u);
+	KeyStaIn(KEY_SUB,	(key_sub_GPIO_Port->IDR & key_sub_Pin) == 0x00u);
+	KeyStaIn(KEY_MOVE,	(key_move_GPIO_Port->IDR & key_move_Pin) == 0x00u);
+	KeyStaIn(KEY_PULSE,	(key_pulse_GPIO_Port->IDR & key_pulse_Pin) == 0x00u);
+	KeyStaIn(KEY_FREQ,	(key_freq_GPIO_Port->IDR & key_freq_Pin) == 0x00u);
+	KeyStaIn(KEY_VOLT,	(key_volt_GPIO_Port->IDR & key_volt_Pin) == 0x00u);
+	KeyStaIn(KEY_OUTPUT,(key_output_GPIO_Port->IDR & key_output_Pin) == 0x00u);
   /* USER CODE END SysTick_IRQn 1 */
 }
 
@@ -168,6 +174,7 @@ void TIM1_CC_IRQHandler(void)
 	
 //	HAL_TIMEx_PWMN_Stop_IT(&htim1, TIM_CHANNEL_1);
 //	HAL_TIM_PWM_Stop_IT(&htim1, TIM_CHANNEL_1);
+	
 	HAL_TIM_PWM_PWMN_Stop_IT(&htim1, TIM_CHANNEL_1);
 	
 	__HAL_TIM_CLEAR_FLAG(&htim1, TIM_IT_CC1);
@@ -187,14 +194,6 @@ void TIM1_CC_IRQHandler(void)
 void TIM3_IRQHandler(void)
 {
   /* USER CODE BEGIN TIM3_IRQn 0 */
-	
-//	if(output_mode == MODE_PULSE_GROUP){
-//        if ((htim1.Instance->CR1 & TIM_CR1_CEN) == 0){
-////            htim1.Instance->CNT = 0;
-////            htim1.Instance->BDTR &= ~TIM_BDTR_MOE;
-//            HAL_TIM_PWM_PWMN_Stop(&htim1, TIM_CHANNEL_1);
-//        }
-//	}
     
     if(__HAL_TIM_GET_FLAG(&htim3, TIM_IT_TRIGGER)){
 		if(output_mode == MODE_REPEAT_BURST || output_mode == MODE_SINGEL_BURST)
@@ -238,7 +237,6 @@ void TIM17_IRQHandler(void)
 	else if(output_mode == MODE_REPEAT_BURST){
 		htim1.Instance->RCR = 100-1;
 		HAL_TIM_PWM_PWMN_Start(&htim1, TIM_CHANNEL_1);
-        pulse_group_output = 1;
 	}
 	else{
 		HAL_TIM_PWM_PWMN_Start_IT(&htim1, TIM_CHANNEL_1);
