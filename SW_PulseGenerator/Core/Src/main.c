@@ -42,7 +42,6 @@
 
 /*
 发现的bug：
-burst模式第一个脉冲只有一个脉冲
 低速率下burst模式会有时不置位输出状态
 
 */
@@ -2157,7 +2156,7 @@ void key_do_add(void){
 			break;
 			
 		case SET_PULSE_NS:
-			if(set_pos <= 10){
+			if(set_pos && set_pos <= 10){
 				if(set_PULSE_num + 50 <= 9950)
 					set_PULSE_num += 50;
 				else
@@ -2211,7 +2210,7 @@ void key_do_sub(void){
 			break;
 			
 		case SET_PULSE_NS:
-			if(set_pos <= 10){
+			if(set_pos && set_pos <= 10){
 				if(set_PULSE_num - 50 > 50)
 					set_PULSE_num -= 50;
 				else
