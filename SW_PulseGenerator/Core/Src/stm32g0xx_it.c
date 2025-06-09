@@ -141,6 +141,7 @@ void SysTick_Handler(void)
 	KeyStaIn(KEY_FREQ,	(key_freq_GPIO_Port->IDR & key_freq_Pin) == 0x00u);
 	KeyStaIn(KEY_VOLT,	(key_volt_GPIO_Port->IDR & key_volt_Pin) == 0x00u);
 	KeyStaIn(KEY_OUTPUT,(key_output_GPIO_Port->IDR & key_output_Pin) == 0x00u);
+    
   /* USER CODE END SysTick_IRQn 1 */
 }
 
@@ -196,8 +197,9 @@ void TIM3_IRQHandler(void)
   /* USER CODE BEGIN TIM3_IRQn 0 */
     
     if(__HAL_TIM_GET_FLAG(&htim3, TIM_IT_TRIGGER)){
-		if(output_mode == MODE_REPEAT_BURST || output_mode == MODE_SINGEL_BURST)
-        HAL_TIM_PWM_PWMN_Stop(&htim1, TIM_CHANNEL_1);
+		if(output_mode == MODE_REPEAT_BURST || output_mode == MODE_SINGEL_BURST){
+            HAL_TIM_PWM_PWMN_Stop(&htim1, TIM_CHANNEL_1);
+        }
     }
 	
 	__HAL_TIM_CLEAR_IT(&htim3, TIM_IT_UPDATE | TIM_IT_TRIGGER);
@@ -216,7 +218,22 @@ void TIM3_IRQHandler(void)
 void TIM14_IRQHandler(void)
 {
   /* USER CODE BEGIN TIM14_IRQn 0 */
-	led_task();
+    static uint8_t count = 10;
+    
+    if((htim1.Instance->CR1 & TIM_CR1_CEN) == 0 && (htim1.Instance->BDTR & TIM_BDTR_MOE)){
+        HAL_TIM_PWM_PWMN_Stop(&htim1, TIM_CHANNEL_1);
+    }
+    
+    if(count >=  3){
+        led_task();
+        count = 0;
+    }
+    else count++;
+    
+	
+	__HAL_TIM_CLEAR_IT(&htim14, TIM_IT_UPDATE);
+    
+	return;
 
   /* USER CODE END TIM14_IRQn 0 */
   HAL_TIM_IRQHandler(&htim14);

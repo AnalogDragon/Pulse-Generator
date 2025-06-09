@@ -40,7 +40,12 @@
 #define htimTIM htim17
 #define htimSTP htim3
 
-//bug：切换到onepulse模式后再切换回一开始，会有问题
+/*
+发现的bug：
+burst模式第一个脉冲只有一个脉冲
+低速率下burst模式会有时不置位输出状态
+
+*/
 
 /* USER CODE END PD */
 
@@ -86,6 +91,7 @@ void key_output(void);
 void set_output(uint8_t sta);
 HAL_StatusTypeDef TIM_ConfigFrequencyOptimized(float desiredFreq, uint32_t pulseWidth_ns);
 void KeyStaIn(uint8_t num, uint8_t sta);
+HAL_StatusTypeDef TIM1_ReversePolarity(uint8_t reverse);
 
 void key_do_output(void);
 void key_do_pulse(uint8_t press_long);
@@ -113,6 +119,8 @@ extern const uint16_t  *p_disp_str1;
 extern const uint16_t  *p_disp_str2;
 extern uint8_t  len_disp_str1;
 extern uint8_t  len_disp_str2;
+
+volatile uint8_t pwm_timer_lock = 0;
 
 
 /* USER CODE END PFP */
@@ -152,15 +160,6 @@ burst：001KHZ~999KHZ，0.01MHZ~5.00MHZ
 000.1uS~500.0uS,0050nS~9999nS
 除此之外还需要计算频率范围锁
 */
-#define SET_FREQ_HZ 	0
-#define SET_FREQ_KHZ 	1
-#define SET_FREQ_MHZ 	2
-
-#define SET_PULSE_NS 	3
-#define SET_PULSE_US 	4
-
-#define SET_VOLT_MV 	5
-#define SET_VOLT_V 		6
 
 
 
@@ -309,7 +308,7 @@ void set_limit(void){
 	uint32_t pulse;
 	uint32_t freq;
 	if(set_FREQ_unit == SET_FREQ_HZ){//000.1Hz~999.9Hz
-		pulse = 9999;
+		pulse = 500000;
 	}
 	else if(set_FREQ_unit == SET_FREQ_KHZ){//001KHZ~999KHZ
 		freq = set_FREQ_num;
@@ -319,10 +318,14 @@ void set_limit(void){
 		freq = set_FREQ_num*10;
 		pulse = 1000000 / freq / 2;	//ns
 	}
+    
+    if(set_PULSE_unit == SET_PULSE_US){
+        pulse /= 100;
+    }
+    if(set_PULSE_num > pulse){
+        set_PULSE_num = pulse;
+    }
 	
-	if(set_PULSE_num > pulse){
-		set_PULSE_num = pulse;
-	}
 	
 }
 
@@ -427,6 +430,7 @@ void out_put_negitve(void){
 		len_disp_str1 = sizeof(disp_positive)/2;
 	}
 	
+	TIM1_ReversePolarity(output_negative);
 }
 
 
@@ -542,8 +546,8 @@ void Key_Task(void){
 			//负脉冲输出切换
 			done[KEY_ADD] = 0xFF;
 			done[KEY_SUB] = 0xFF;
-			out_put_negitve();
 			set_output(DISABLE);
+			out_put_negitve();
 		}
 	}
 	
@@ -563,7 +567,7 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
-
+    
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -619,10 +623,9 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  Key_Task();
-	  disp_task();
-	  HAL_Delay(10);
-
+    Key_Task();
+    disp_task();
+    HAL_Delay(10);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -917,7 +920,7 @@ static void MX_TIM14_Init(void)
   htim14.Instance = TIM14;
   htim14.Init.Prescaler = 0;
   htim14.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim14.Init.Period = 10000;
+  htim14.Init.Period = 3000;
   htim14.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim14.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
   if (HAL_TIM_Base_Init(&htim14) != HAL_OK)
@@ -1159,6 +1162,7 @@ static void MX_GPIO_Init(void)
 
 
 
+
 /**
  * @brief  重新配置 TIM1 输出极性（主通道和互补通道）
  * @param  htim: TIM1 的句柄（TIM_HandleTypeDef*）
@@ -1167,23 +1171,53 @@ static void MX_GPIO_Init(void)
  */
 HAL_StatusTypeDef TIM1_ReversePolarity(uint8_t reverse) {
     TIM_OC_InitTypeDef sConfigOC = {0};
+    GPIO_InitTypeDef GPIO_InitStruct = {0};
 
 
 	sConfigOC.OCMode = TIM_OCMODE_PWM1;
 	sConfigOC.Pulse = 100;
-	sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
-	sConfigOC.OCNPolarity = TIM_OCNPOLARITY_HIGH;
 	sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
-	sConfigOC.OCIdleState = TIM_OCIDLESTATE_RESET;
-	sConfigOC.OCNIdleState = TIM_OCNIDLESTATE_RESET;
 
     // 根据 reverse 参数设置极性
-    if (reverse) {
+    if (reverse == ENABLE) {
         sConfigOC.OCPolarity = TIM_OCPOLARITY_LOW;    // 主输出低有效
         sConfigOC.OCNPolarity = TIM_OCNPOLARITY_LOW;  // 互补输出低有效
-    } else {
+        sConfigOC.OCIdleState = TIM_OCIDLESTATE_SET;
+        sConfigOC.OCNIdleState = TIM_OCNIDLESTATE_SET;
+        GPIO_InitStruct.Pin = GPIO_PIN_13;
+        GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+        GPIO_InitStruct.Pull = GPIO_PULLDOWN;
+        GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_MEDIUM;
+        GPIO_InitStruct.Alternate = GPIO_AF2_TIM1;
+        HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+        GPIO_InitStruct.Pin = GPIO_PIN_8;
+        GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+        GPIO_InitStruct.Pull = GPIO_PULLUP;
+        GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_MEDIUM;
+        GPIO_InitStruct.Alternate = GPIO_AF2_TIM1;
+        HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+        
+    }
+    else {
         sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;    // 主输出高有效
         sConfigOC.OCNPolarity = TIM_OCNPOLARITY_HIGH;  // 互补输出高有效
+        sConfigOC.OCIdleState = TIM_OCIDLESTATE_RESET;
+        sConfigOC.OCNIdleState = TIM_OCNIDLESTATE_RESET;
+        GPIO_InitStruct.Pin = GPIO_PIN_13;
+        GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+        GPIO_InitStruct.Pull = GPIO_PULLUP;
+        GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_MEDIUM;
+        GPIO_InitStruct.Alternate = GPIO_AF2_TIM1;
+        HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+        GPIO_InitStruct.Pin = GPIO_PIN_8;
+        GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+        GPIO_InitStruct.Pull = GPIO_PULLDOWN;
+        GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_MEDIUM;
+        GPIO_InitStruct.Alternate = GPIO_AF2_TIM1;
+        HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+        
     }
 
     // 重新配置 PWM 通道（仅更新极性）
@@ -1237,8 +1271,7 @@ static void TIM_CCxNChannelCmd_mine(TIM_TypeDef *TIMx, uint32_t Channel, uint32_
   */
 HAL_StatusTypeDef HAL_TIM_PWM_PWMN_Start(TIM_HandleTypeDef *htim, uint32_t Channel)
 {
-  uint32_t tmpsmcr;
-
+    
   /* Check the parameters */
   assert_param(IS_TIM_CCX_INSTANCE(htim->Instance, Channel));
 
@@ -1265,7 +1298,8 @@ HAL_StatusTypeDef HAL_TIM_PWM_PWMN_Start(TIM_HandleTypeDef *htim, uint32_t Chann
 	TIM_CCxNChannelCmd_mine(htim->Instance, Channel, TIM_CCxN_ENABLE);
 	
 //	__HAL_TIM_MOE_ENABLE(htim);
-	htim->Instance->BDTR |= TIM_BDTR_MOE;
+    htim->Instance->BDTR |= TIM_BDTR_MOE;
+    htim->Instance->CR1 |= (TIM_CR1_CEN);
 
   /* Enable the Peripheral, except in trigger mode where enable is automatically done with trigger */
 //  if (IS_TIM_SLAVE_INSTANCE(htim->Instance))
@@ -1280,7 +1314,6 @@ HAL_StatusTypeDef HAL_TIM_PWM_PWMN_Start(TIM_HandleTypeDef *htim, uint32_t Chann
 //  {
 //    __HAL_TIM_ENABLE(htim);
 //  }
-htim->Instance->CR1 |= (TIM_CR1_CEN);
 
   /* Return function status */
   return HAL_OK;
@@ -1311,10 +1344,10 @@ HAL_StatusTypeDef HAL_TIM_PWM_PWMN_Stop(TIM_HandleTypeDef *htim, uint32_t Channe
 	
 //  __HAL_TIM_MOE_DISABLE(htim);
 	  htim->Instance->BDTR &= ~(TIM_BDTR_MOE);
+	  htim->Instance->CR1 &= ~(TIM_CR1_CEN);
 
   /* Disable the Peripheral */
 //  __HAL_TIM_DISABLE(htim);
-	  htim->Instance->CR1 &= ~(TIM_CR1_CEN);
 	
 //  /* Set the TIM complementary channel state */
 //  TIM_CHANNEL_N_STATE_SET(htim, Channel, HAL_TIM_CHANNEL_STATE_READY);
@@ -1341,7 +1374,6 @@ HAL_StatusTypeDef HAL_TIM_PWM_PWMN_Stop(TIM_HandleTypeDef *htim, uint32_t Channe
 HAL_StatusTypeDef HAL_TIM_PWM_PWMN_Start_IT(TIM_HandleTypeDef *htim, uint32_t Channel)
 {
   HAL_StatusTypeDef status = HAL_OK;
-  uint32_t tmpsmcr;
 
   /* Check the parameters */
   assert_param(IS_TIM_CCX_INSTANCE(htim->Instance, Channel));
@@ -1409,6 +1441,7 @@ HAL_StatusTypeDef HAL_TIM_PWM_PWMN_Start_IT(TIM_HandleTypeDef *htim, uint32_t Ch
     
 //		__HAL_TIM_MOE_ENABLE(htim);
 	htim->Instance->BDTR |= TIM_BDTR_MOE;
+	htim->Instance->CR1 |= (TIM_CR1_CEN);
 
 //    /* Enable the Peripheral, except in trigger mode where enable is automatically done with trigger */
 //    if (IS_TIM_SLAVE_INSTANCE(htim->Instance))
@@ -1423,7 +1456,6 @@ HAL_StatusTypeDef HAL_TIM_PWM_PWMN_Start_IT(TIM_HandleTypeDef *htim, uint32_t Ch
 //    {
 //      __HAL_TIM_ENABLE(htim);
 //    }
-	htim->Instance->CR1 |= (TIM_CR1_CEN);
   }
 
   /* Return function status */
@@ -1493,10 +1525,10 @@ HAL_StatusTypeDef HAL_TIM_PWM_PWMN_Stop_IT(TIM_HandleTypeDef *htim, uint32_t Cha
 		
 		/* Disable the Main Output */
 	  htim->Instance->BDTR &= ~(TIM_BDTR_MOE);
+	  htim->Instance->CR1 &= ~(TIM_CR1_CEN);
 //		__HAL_TIM_MOE_DISABLE(htim);
 
     /* Disable the Peripheral */
-	  htim->Instance->CR1 &= ~(TIM_CR1_CEN);
 //    __HAL_TIM_DISABLE(htim);
 
 //    /* Set the TIM complementary channel state */
@@ -1957,7 +1989,7 @@ uint8_t output_sta = DISABLE;
 
 void set_output(uint8_t sta){
 	if(sta == DISABLE){
-		dac_set_volt(0);
+//		dac_set_volt(0);
 		HAL_TIM_Base_Stop_IT(&htimTIM);
 		HAL_TIM_PWM_PWMN_Stop(&htimPWM, TIM_CHANNEL_1);
 		HAL_TIM_PWM_PWMN_Stop_IT(&htimPWM, TIM_CHANNEL_1);
@@ -1966,6 +1998,7 @@ void set_output(uint8_t sta){
 	else if(sta == ENABLE){
 		//设置输出mV数字
 		dac_set_volt(set_VOLT_num);
+        HAL_Delay(10);
 		//设置频率输出
 		uint32_t freq;
 		uint32_t pulse;
@@ -1988,7 +2021,8 @@ void set_output(uint8_t sta){
 		}
 		
 		TIM_ConfigFrequencyOptimized((float)freq / 10.0f, pulse);
-		output_sta = ENABLE;
+        if(output_mode != MODE_SINGEL_BURST)
+            output_sta = ENABLE;
 	}
 }
 
@@ -2047,8 +2081,8 @@ void key_do_volt(uint8_t press_long){
 		else if(set_VOLT_unit == SET_VOLT_V){
 			 set_VOLT_unit = SET_VOLT_MV;
 		}
-		if(output_sta == ENABLE)
-			set_output(DISABLE);
+//		if(output_sta == ENABLE)
+//			set_output(DISABLE);
 	}
 	
 	if(disp_set_unit != set_VOLT_unit){
@@ -2153,8 +2187,14 @@ void key_do_add(void){
 		default:
 			;
 	}
-	if(output_sta == ENABLE && set_pos)
-		set_output(ENABLE);
+	if(set_pos){
+        if(disp_set_unit == SET_VOLT_MV){
+            dac_set_volt(set_VOLT_num);
+        }
+        else if(output_sta == ENABLE){
+            set_output(ENABLE);
+        }
+    }
 }
 
 void key_do_sub(void){
@@ -2201,8 +2241,14 @@ void key_do_sub(void){
 		default:
 			;
 	}
-	if(output_sta == ENABLE && set_pos)
-		set_output(ENABLE);
+	if(set_pos){
+        if(disp_set_unit == SET_VOLT_MV){
+            dac_set_volt(set_VOLT_num);
+        }
+        else if(output_sta == ENABLE){
+            set_output(ENABLE);
+        }
+    }
 }
 
 void key_do_negt(void){
@@ -2328,26 +2374,32 @@ HAL_StatusTypeDef TIM_ConfigFrequencyOptimized(
     HAL_TIM_PWM_PWMN_Stop_IT(&htimPWM, TIM_CHANNEL_1);
 	
 	HAL_TIM_Base_Init(&htimTIM);
+    
+	TIM1_ReversePolarity(output_negative);
 	
     HAL_Delay(1);
 	
-//	TIM1_ReversePolarity(0);
 		
 		
 		if(output_mode == MODE_SINGEL_BURST)
 		{
 			if(bestPsc == 0)
 			{
-				htim1.Instance->RCR = 100-1;
 				if (HAL_TIM_OnePulse_Init(&htimPWM, TIM_OPMODE_SINGLE) != HAL_OK)
 				{
 						Error_Handler();
 				}
-				
-				__HAL_TIM_SET_PRESCALER(&htimPWM, 0);
-				__HAL_TIM_SET_AUTORELOAD(&htimPWM, bestArr);
-				
+                
+                htimPWM.Init.RepetitionCounter = 100-1;
+                htimPWM.Init.Prescaler = 0;
+                htimPWM.Init.Period = bestArr;
+                
 				TIM_ConfigPulseWidth(&htimPWM, TIM_CHANNEL_1, pulseWidth_ns);
+                
+                HAL_TIM_Base_Init(&htimPWM);
+//				htimPWM.Instance->RCR = 100-1;
+//				__HAL_TIM_SET_PRESCALER(&htimPWM, 0);
+//				__HAL_TIM_SET_AUTORELOAD(&htimPWM, bestArr);
 				
 				HAL_TIM_PWM_PWMN_Start(&htim1, TIM_CHANNEL_1);
 			}
@@ -2360,15 +2412,23 @@ HAL_StatusTypeDef TIM_ConfigFrequencyOptimized(
 		{
 			if(bestPsc == 0)
 			{
-				htimPWM.Instance->RCR = 100-1;
 				if (HAL_TIM_OnePulse_Init(&htimPWM, TIM_OPMODE_SINGLE) != HAL_OK)
 				{
 						Error_Handler();
 				}
-				__HAL_TIM_SET_PRESCALER(&htimPWM, 0);
-				__HAL_TIM_SET_AUTORELOAD(&htimPWM, bestArr);
-				
+                
+                htimPWM.Init.RepetitionCounter = 100-1;
+                htimPWM.Init.Prescaler = 0;
+                htimPWM.Init.Period = bestArr;
+                
 				TIM_ConfigPulseWidth(&htimPWM, TIM_CHANNEL_1, pulseWidth_ns);
+                
+                HAL_TIM_Base_Init(&htimPWM);
+//				htimPWM.Instance->RCR = 100-1;
+//				__HAL_TIM_SET_PRESCALER(&htimPWM, 0);
+//				__HAL_TIM_SET_AUTORELOAD(&htimPWM, bestArr);
+				
+                
 				
 				__HAL_TIM_SET_PRESCALER(&htimTIM, 60000-1);
 				__HAL_TIM_SET_AUTORELOAD(&htimTIM, 1000-1);
@@ -2382,17 +2442,19 @@ HAL_StatusTypeDef TIM_ConfigFrequencyOptimized(
 		}
 		else
 		{
-			htimPWM.Instance->RCR = 0;
 			if (HAL_TIM_OnePulse_Init(&htimPWM, TIM_OPMODE_REPETITIVE) != HAL_OK)
 			{
 					Error_Handler();
 			}
+            htimPWM.Init.RepetitionCounter = 0;
 			if(bestPsc == 0)
 			{
-					__HAL_TIM_SET_PRESCALER(&htimPWM, 0);
-					__HAL_TIM_SET_AUTORELOAD(&htimPWM, bestArr);
-					
-					TIM_ConfigPulseWidth(&htimPWM, TIM_CHANNEL_1, pulseWidth_ns);
+                    htimPWM.Init.Prescaler = 0;
+                    htimPWM.Init.Period = bestArr;
+                    
+                    TIM_ConfigPulseWidth(&htimPWM, TIM_CHANNEL_1, pulseWidth_ns);
+                    
+                    HAL_TIM_Base_Init(&htimPWM);
 					
 					HAL_TIM_PWM_PWMN_Start(&htimPWM, TIM_CHANNEL_1);
 			}
@@ -2407,6 +2469,10 @@ HAL_StatusTypeDef TIM_ConfigFrequencyOptimized(
 					TIM_ConfigPulseWidth(&htimPWM, TIM_CHANNEL_1, pulseWidth_ns);
 					
 					__HAL_TIM_SET_AUTORELOAD(&htimPWM, htimPWM.Instance->CCR1+10000);
+                
+                    htimPWM.Init.Prescaler = 0;
+                    
+                    HAL_TIM_Base_Init(&htimPWM);
 					
 					HAL_TIM_Base_Start_IT(&htimTIM);
 			}

@@ -192,6 +192,8 @@ extern volatile uint16_t adc_buffer[ADC_BUFFER_SIZE][ADC_CHANNEL_NUM];
 
 extern volatile double adc_value[ADC_CHANNEL_NUM];
 extern uint8_t output_sta;
+extern volatile uint8_t pwm_timer_lock;
+
 
 #define KEY_ADD		0
 #define KEY_SUB		1
