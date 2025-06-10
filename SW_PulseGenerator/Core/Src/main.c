@@ -42,8 +42,10 @@
 
 /*
 发现的bug：
-低速率下burst模式会有时不置位输出状态
+低速率下burst模式会有时不置位输出状态：用凑合的方式先解决了
 
+未实现：
+允许校准高压显示的倍率（开机按住电压键进入校准，给一个固定电压，然后上下输入显示值后按输出结束）
 */
 
 /* USER CODE END PD */
@@ -2481,6 +2483,7 @@ HAL_StatusTypeDef TIM_ConfigFrequencyOptimized(
     
     return HAL_OK;
 }
+
 
 
 /* USER CODE END 4 */

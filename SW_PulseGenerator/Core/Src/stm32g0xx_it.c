@@ -173,9 +173,6 @@ void TIM1_CC_IRQHandler(void)
 {
   /* USER CODE BEGIN TIM1_CC_IRQn 0 */
 	
-//	HAL_TIMEx_PWMN_Stop_IT(&htim1, TIM_CHANNEL_1);
-//	HAL_TIM_PWM_Stop_IT(&htim1, TIM_CHANNEL_1);
-	
 	HAL_TIM_PWM_PWMN_Stop_IT(&htim1, TIM_CHANNEL_1);
 	
 	__HAL_TIM_CLEAR_FLAG(&htim1, TIM_IT_CC1);
