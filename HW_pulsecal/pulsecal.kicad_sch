@@ -7304,7 +7304,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "1K"
+		(property "Value" "NC"
 			(at 156.21 73.914 90)
 			(effects
 				(font
