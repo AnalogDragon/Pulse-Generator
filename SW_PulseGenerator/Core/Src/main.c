@@ -24,6 +24,7 @@
 #include <math.h>
 #include <float.h>
 #include <string.h>
+#include <stdlib.h> 
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -43,9 +44,6 @@
 /*
 发现的bug：
 低速率下burst模式会有时不置位输出状态：用凑合的方式先解决了
-
-未实现：
-允许校准高压显示的倍率（开机按住电压键进入校准，给一个固定电压，然后上下输入显示值后按输出结束）
 */
 
 /* USER CODE END PD */
@@ -93,6 +91,9 @@ void set_output(uint8_t sta);
 HAL_StatusTypeDef TIM_ConfigFrequencyOptimized(float desiredFreq, uint32_t pulseWidth_ns);
 void KeyStaIn(uint8_t num, uint8_t sta);
 HAL_StatusTypeDef TIM1_ReversePolarity(uint8_t reverse);
+uint8_t disp_str_step(const uint16_t* str,uint8_t len);
+void disp_num_hid(uint32_t num,uint8_t len,uint8_t pos,uint8_t e10,uint32_t hidd);
+void disp_num(uint32_t num,uint8_t len,uint8_t pos,uint8_t e10);
 
 void key_do_output(void);
 void key_do_pulse(uint8_t press_long);
@@ -150,6 +151,177 @@ const uint16_t disp_MV[6] ={0,0,0,0,DISP_CHAR_m,DISP_CHAR_V};
 const uint16_t disp_V[6] ={0,0,0,0,0,DISP_CHAR_V}; 
 
 
+const uint16_t disp_calib_HV[8] ={DISP_CHAR_C,DISP_CHAR_A,DISP_CHAR_L,DISP_CHAR_I,DISP_CHAR_B|0x4000,0,DISP_CHAR_H,DISP_CHAR_V};
+const uint16_t disp_done[6] ={0,0,DISP_CHAR_D,DISP_CHAR_O,DISP_CHAR_N,DISP_CHAR_E}; 
+const uint16_t disp_failed[12] ={DISP_CHAR_F,DISP_CHAR_A,DISP_CHAR_I,DISP_CHAR_L,DISP_CHAR_E,DISP_CHAR_D,0,DISP_CHAR_R,DISP_CHAR_E,DISP_CHAR_T,DISP_CHAR_R,DISP_CHAR_Y}; 
+
+
+double hv_calib_gain = 1.0;
+
+uint32_t hv_calib_num = 9000;
+
+
+uint8_t cal_task(void){
+	
+	static uint8_t set_pos_count = 0;
+	uint16_t set_pos_buf = 0;
+	static uint8_t done[KEY_SIZE];
+	static double volt_filter = 0;
+	
+	/*闪烁位*/
+	if(set_pos_count < 25){
+		set_pos_count++;
+	}
+	else{
+		set_pos_count = 0;
+	}
+	if(set_pos_count > 20)
+		set_pos_buf = set_pos;
+	/*key*/
+	
+	/**/
+	if(key_sta[KEY_ADD]){
+		if(done[KEY_ADD] == 0 || done[KEY_ADD] == 50){
+			if(hv_calib_num + set_pos < 40000)hv_calib_num += set_pos;
+			else hv_calib_num = 40000;
+		}
+		done[KEY_ADD] ++;
+		if(done[KEY_ADD] == 60)done[KEY_ADD] = 50;
+	}
+	else{
+		done[KEY_ADD] = 0;
+	}
+
+	/**/
+	if(key_sta[KEY_SUB]){
+		if(done[KEY_SUB] == 0 || done[KEY_SUB] == 50){
+			if(hv_calib_num - set_pos > 1000)hv_calib_num -= set_pos;
+			else hv_calib_num = 1000;
+		}
+		done[KEY_SUB] ++;
+		if(done[KEY_SUB] == 60)done[KEY_SUB] = 50;
+	}
+	else{
+		done[KEY_SUB] = 0;
+	}
+
+	/**/
+	if(key_sta[KEY_MOVE]){
+		if(done[KEY_MOVE] == 0){
+			switch (set_pos){
+				case 10000:
+					set_pos = 1000;
+					break;
+				case 1000:
+					set_pos = 100;
+					break;
+				case 100:
+					set_pos = 10;
+					break;
+				case 10:
+					set_pos = 1;
+					break;
+				case 1:
+				default:
+					set_pos = 10000;
+			}
+		}
+		if(done[KEY_MOVE] < 128)
+			done[KEY_MOVE] ++;
+	}
+	else{
+		done[KEY_MOVE] = 0;
+	}
+	
+	memcpy(g_ram,disp_V,12);
+	disp_num_hid(hv_calib_num,5,0,1,set_pos_buf);
+	
+	/**/
+	if(key_sta[KEY_OUTPUT]){
+		
+		volt_filter = volt_filter * 0.99 + adc_value[HV_CH]*0.01;
+		
+		if(done[KEY_OUTPUT] == 250){
+			hv_calib_gain = hv_calib_num / volt_filter / 10;
+			return 1;
+		}
+		if(done[KEY_OUTPUT] < 250)
+			done[KEY_OUTPUT] ++;
+		for(uint8_t i=0;i<6;i++){
+			if(done[KEY_OUTPUT] > i*40){
+				g_ram[i] = rand();
+			}
+		}
+	}
+	else{
+		done[KEY_OUTPUT] = 0;
+		volt_filter = adc_value[HV_CH];
+	}
+	return 0;
+}
+
+uint8_t  save_cal(void){
+  uint32_t PageError = 0; 
+	
+  FLASH_EraseInitTypeDef FLASH_EraseInitType = {
+	FLASH_TYPEERASE_PAGES,0,FLASH_PAGE_SAVE,1
+	};
+  
+  HAL_FLASH_Unlock();
+  
+  HAL_FLASHEx_Erase(&FLASH_EraseInitType, &PageError);
+  
+  if(0xFFFFFFFF != PageError){
+    //Erase Failed!
+	  HAL_FLASH_Lock();
+	  return 1;
+  }
+	// 写入 Flash
+	uint64_t rawData;
+	memcpy(&rawData, &hv_calib_gain, sizeof(double));
+	if (HAL_FLASH_Program(FLASH_TYPEPROGRAM_DOUBLEWORD, FLASH_ADDR_SAVE, rawData) != HAL_OK) {
+		HAL_FLASH_Lock();
+		return 2;  // 写入失败
+	}
+	
+  HAL_FLASH_Lock();
+  return 0;
+}
+
+void load_cal(void) {
+    uint64_t *pData = (uint64_t*)FLASH_ADDR_SAVE;
+    if (*pData == 0xFFFFFFFF) {
+        hv_calib_gain = 1.0;  // 默认值（Flash 未写入）
+    } else {
+        memcpy(&hv_calib_gain, pData, sizeof(double));
+    }
+}
+
+void voltage_cal(void){
+	while(!disp_str_step(disp_calib_HV,sizeof(disp_calib_HV)/2))
+		HAL_Delay(100);
+	
+	set_pos = 10000;
+	hv_calib_gain = 1.0;
+	
+	while(!cal_task()){
+		HAL_Delay(10);
+	}
+	
+	if(save_cal()){
+		while(!disp_str_step(disp_failed,sizeof(disp_failed)/2))
+			HAL_Delay(100);
+	}
+	else{
+		while(!disp_str_step(disp_done,sizeof(disp_done)/2))
+			HAL_Delay(100);
+	}
+	
+	HAL_NVIC_SystemReset();
+}
+
+
+
 
 /*
 频率范围：
@@ -193,7 +365,9 @@ void set_limit(void){
 				set_FREQ_num = 9999;
 			}
 		}
-		else if(set_FREQ_unit == SET_FREQ_KHZ){
+		else if(set_FREQ_unit == SET_FREQ_KHZ0 
+			|| set_FREQ_unit == SET_FREQ_KHZ1 
+			|| set_FREQ_unit == SET_FREQ_KHZ2){
 			if(set_FREQ_num < 1){
 				set_FREQ_num = 1;
 			}
@@ -239,13 +413,29 @@ void set_limit(void){
 		//频率限制：
 		//burst：001KHZ~999KHZ，0.01MHZ~5.00MHZ
 		if(set_FREQ_unit == SET_FREQ_HZ){
-			set_FREQ_unit = SET_FREQ_KHZ;
+			set_FREQ_unit = SET_FREQ_KHZ2;
 			set_FREQ_num = 10;
 			if(disp_set_unit == SET_FREQ_HZ){
-				disp_set_unit = SET_FREQ_KHZ;
+				disp_set_unit = SET_FREQ_KHZ2;
 			}
 		}
-		else if(set_FREQ_unit == SET_FREQ_KHZ){
+		else if(set_FREQ_unit == SET_FREQ_KHZ0){
+			if(set_FREQ_num < 100){
+				set_FREQ_num = 100;
+			}
+			else if(set_FREQ_num > 999){
+				set_FREQ_num = 999;
+			}
+		}
+		else if(set_FREQ_unit == SET_FREQ_KHZ1){
+			if(set_FREQ_num < 10){
+				set_FREQ_num = 10;
+			}
+			else if(set_FREQ_num > 999){
+				set_FREQ_num = 999;
+			}
+		}
+		else if(set_FREQ_unit == SET_FREQ_KHZ2){
 			if(set_FREQ_num < 1){
 				set_FREQ_num = 1;
 			}
@@ -262,7 +452,7 @@ void set_limit(void){
 			}
 		}
 		else{
-			set_FREQ_unit = SET_FREQ_KHZ;
+			set_FREQ_unit = SET_FREQ_KHZ2;
 			set_FREQ_num = 10;
 		}
 		//脉宽限制 000.1uS~500.0uS,0050nS~9999nS
@@ -311,7 +501,15 @@ void set_limit(void){
 	if(set_FREQ_unit == SET_FREQ_HZ){//000.1Hz~999.9Hz
 		pulse = 500000;
 	}
-	else if(set_FREQ_unit == SET_FREQ_KHZ){//001KHZ~999KHZ
+	else if(set_FREQ_unit == SET_FREQ_KHZ0){//0.01KHZ~9.99KHZ
+		freq = set_FREQ_num;
+		pulse = 100000000 / freq / 2;	//ns
+	}
+	else if(set_FREQ_unit == SET_FREQ_KHZ1){//00.1KHZ~99.9KHZ
+		freq = set_FREQ_num;
+		pulse = 10000000 / freq / 2;	//ns
+	}
+	else if(set_FREQ_unit == SET_FREQ_KHZ2){//001KHZ~999KHZ
 		freq = set_FREQ_num;
 		pulse = 1000000 / freq / 2;	//ns
 	}
@@ -326,7 +524,6 @@ void set_limit(void){
     if(set_PULSE_num > pulse){
         set_PULSE_num = pulse;
     }
-	
 	
 }
 
@@ -409,9 +606,9 @@ void KeyStaIn(uint8_t num, uint8_t sta){
 
 uint8_t output_negative = DISABLE;
 
-void out_put_negitve(void){
+void out_put_negitve(uint8_t sta){
 	
-	if(output_negative == DISABLE){
+	if(sta == ENABLE && output_negative == DISABLE){
 		output_negative = ENABLE;
 	
 		need_disp_str_changed = 1;
@@ -420,8 +617,9 @@ void out_put_negitve(void){
 		p_disp_str1 = disp_negative;
 		len_disp_str1 = sizeof(disp_negative)/2;
 		
+		TIM1_ReversePolarity(output_negative);
 	}
-	else{
+	else if(sta == DISABLE && output_negative == ENABLE){
 		output_negative = DISABLE;
 	
 		need_disp_str_changed = 1;
@@ -429,9 +627,10 @@ void out_put_negitve(void){
 
 		p_disp_str1 = disp_positive;
 		len_disp_str1 = sizeof(disp_positive)/2;
+		
+		TIM1_ReversePolarity(output_negative);
 	}
 	
-	TIM1_ReversePolarity(output_negative);
 }
 
 
@@ -441,9 +640,21 @@ void out_put_negitve(void){
 
 void Key_Task(void){
 	static uint8_t done[7] = {0};
+	static uint16_t count_set = 0;
+	
+	if(set_pos)
+		count_set ++;
+	else
+		count_set = 0;
+	
+	if(count_set > 1000){
+		count_set = 0;
+		set_pos = 0;
+	}
 	
 	/**/
 	if(key_sta[KEY_OUTPUT]){
+		count_set = 0;
 		if(done[KEY_OUTPUT] == 0){
 			key_do_output();
 			done[KEY_OUTPUT] = 1;
@@ -455,6 +666,7 @@ void Key_Task(void){
 	
 	/**/
 	if(key_sta[KEY_PULSE]){
+		count_set = 0;
 		if(done[KEY_PULSE] == 0){
 			key_do_pulse(0);
 		}
@@ -470,6 +682,7 @@ void Key_Task(void){
 	
 	/**/
 	if(key_sta[KEY_FREQ]){
+		count_set = 0;
 		if(done[KEY_FREQ] == 0){
 			key_do_freq(0);
 		}
@@ -485,6 +698,7 @@ void Key_Task(void){
 	
 	/**/
 	if(key_sta[KEY_VOLT]){
+		count_set = 0;
 		if(done[KEY_VOLT] == 0){
 			key_do_volt(0);
 		}
@@ -499,31 +713,18 @@ void Key_Task(void){
 	}
 	
 	/**/
-	if(key_sta[KEY_MOVE]){
-		if(done[KEY_MOVE] == 0){
-			key_do_move(0);
-		}
-		if(done[KEY_MOVE] == 60){
-			key_do_move(1);
-		}
-		if(done[KEY_MOVE] < 128)
-			done[KEY_MOVE] ++;
-	}
-	else{
-		done[KEY_MOVE] = 0;
-	}
-	
-	/**/
-	if(done[KEY_ADD] == 0xFF || done[KEY_SUB] == 0xFF){
-		
-		if(key_sta[KEY_SUB] == 0 && key_sta[KEY_ADD] == 0){
+	if(done[KEY_ADD] == 0xFF || done[KEY_SUB] == 0xFF || done[KEY_MOVE] == 0xFF){
+		if(key_sta[KEY_SUB] == 0 && key_sta[KEY_ADD] == 0 && key_sta[KEY_MOVE] == 0){
 			done[KEY_ADD] = 0;
 			done[KEY_SUB] = 0;
+			done[KEY_MOVE] = 0;
 		}
 	}
 	else{
 		
+		/**/
 		if(key_sta[KEY_ADD]){
+			count_set = 0;
 			if(done[KEY_ADD] == 0 || done[KEY_ADD] == 50)
 				key_do_add();
 			done[KEY_ADD] ++;
@@ -532,8 +733,10 @@ void Key_Task(void){
 		else{
 			done[KEY_ADD] = 0;
 		}
-		
+	
+		/**/
 		if(key_sta[KEY_SUB]){
+			count_set = 0;
 			if(done[KEY_SUB] == 0 || done[KEY_SUB] == 50)
 				key_do_sub();
 			done[KEY_SUB] ++;
@@ -542,13 +745,39 @@ void Key_Task(void){
 		else{
 			done[KEY_SUB] = 0;
 		}
+	
+		/**/
+		if(key_sta[KEY_MOVE]){
+			count_set = 0;
+			if(done[KEY_MOVE] == 0){
+				key_do_move(0);
+			}
+			if(done[KEY_MOVE] == 60){
+				key_do_move(1);
+			}
+			if(done[KEY_MOVE] < 128)
+				done[KEY_MOVE] ++;
+		}
+		else{
+			done[KEY_MOVE] = 0;
+		}
 		
-		if(key_sta[KEY_SUB] && key_sta[KEY_ADD]){
+		if(key_sta[KEY_SUB] && key_sta[KEY_MOVE]){
 			//负脉冲输出切换
-			done[KEY_ADD] = 0xFF;
+			count_set = 0;
+			done[KEY_MOVE] = 0xFF;
 			done[KEY_SUB] = 0xFF;
 			set_output(DISABLE);
-			out_put_negitve();
+			out_put_negitve(ENABLE);
+		}
+		
+		if(key_sta[KEY_ADD] && key_sta[KEY_MOVE]){
+			//负脉冲输出切换
+			count_set = 0;
+			done[KEY_MOVE] = 0xFF;
+			done[KEY_ADD] = 0xFF;
+			set_output(DISABLE);
+			out_put_negitve(DISABLE);
 		}
 	}
 	
@@ -604,8 +833,6 @@ int main(void)
 	//ADC
 	HAL_ADCEx_Calibration_Start(&hadc1);
 	HAL_ADC_Start_DMA(&hadc1,(uint32_t *)adc_buffer,ADC_BUFFER_SIZE*ADC_CHANNEL_NUM);
-    
-    disp_on();
 	
 	//DAC 输出
 	HAL_TIM_PWM_Start(&htimDAC, TIM_CHANNEL_1);
@@ -616,7 +843,14 @@ int main(void)
 	//
 	set_output(DISABLE);
 	
-	HAL_Delay(500);
+    disp_on();
+	
+	if(key_sta[KEY_VOLT] && key_sta[KEY_MOVE]){
+		voltage_cal();
+	}
+	else{
+		load_cal();
+	}
 
   /* USER CODE END 2 */
 
@@ -1798,6 +2032,7 @@ void disp_task(void){
 	static uint8_t set_pos_count = 0;
 	uint16_t set_pos_buf = 0;
 	
+	
 	/*显示电压频率降低*/
 	if(high_voltage_counter < 20){
 		high_voltage_filter += adc_value[HV_CH];
@@ -1859,7 +2094,17 @@ void disp_task(void){
 			disp_num_hid(set_FREQ_num,4,0,1,set_pos_buf);
             break;
 		
-        case SET_FREQ_KHZ:
+        case SET_FREQ_KHZ0:
+			memcpy(g_ram,disp_KHZ,12);
+			disp_num_hid(set_FREQ_num,3,0,2,set_pos_buf);
+            break;
+		
+        case SET_FREQ_KHZ1:
+			memcpy(g_ram,disp_KHZ,12);
+			disp_num_hid(set_FREQ_num,3,0,1,set_pos_buf);
+            break;
+		
+        case SET_FREQ_KHZ2:
 			memcpy(g_ram,disp_KHZ,12);
 			disp_num_hid(set_FREQ_num,3,0,0,set_pos_buf);
             break;
@@ -1930,7 +2175,7 @@ void adc_calc(void){
     }
 		
     adc_value[0] = (double)(temp0 * 2.414) / (double)temp3;
-    adc_value[1] = (double)(temp1 * 1212) / (double)temp3;
+    adc_value[1] = (double)(temp1 * 1212) * hv_calib_gain / (double)temp3;
     adc_value[2] = (double)(temp2 * 1.212) / (double)temp3;
     
 	if(dac_sta){
@@ -2004,7 +2249,13 @@ void set_output(uint8_t sta){
 		uint32_t freq;
 		uint32_t pulse;
 		
-		if(set_FREQ_unit == SET_FREQ_KHZ){
+		if(set_FREQ_unit == SET_FREQ_KHZ0){
+			freq = set_FREQ_num*100;
+		}
+		else if(set_FREQ_unit == SET_FREQ_KHZ1){
+			freq = set_FREQ_num*1000;
+		}
+		else if(set_FREQ_unit == SET_FREQ_KHZ2){
 			freq = set_FREQ_num*10000;
 		}
 		else if(set_FREQ_unit == SET_FREQ_MHZ){
@@ -2095,9 +2346,15 @@ void key_do_volt(uint8_t press_long){
 void key_do_freq(uint8_t press_long){
 	if(press_long){
 		if(set_FREQ_unit == SET_FREQ_HZ){
-			 set_FREQ_unit = SET_FREQ_KHZ;
+			 set_FREQ_unit = SET_FREQ_KHZ0;
 		}
-		else if(set_FREQ_unit == SET_FREQ_KHZ){
+		else if(set_FREQ_unit == SET_FREQ_KHZ0){
+			 set_FREQ_unit = SET_FREQ_KHZ1;
+		}
+		else if(set_FREQ_unit == SET_FREQ_KHZ1){
+			 set_FREQ_unit = SET_FREQ_KHZ2;
+		}
+		else if(set_FREQ_unit == SET_FREQ_KHZ2){
 			 set_FREQ_unit = SET_FREQ_MHZ;
 		}
 		else if(set_FREQ_unit == SET_FREQ_MHZ){
@@ -2133,7 +2390,10 @@ void key_do_move(uint8_t press_long){
 			case 1:
 			default:
 				set_pos = 1000;
-				if(disp_set_unit == SET_FREQ_KHZ || disp_set_unit == SET_FREQ_MHZ)
+				if(disp_set_unit == SET_FREQ_KHZ0
+					||disp_set_unit == SET_FREQ_KHZ1
+					||disp_set_unit == SET_FREQ_KHZ2
+					|| disp_set_unit == SET_FREQ_MHZ)
 					set_pos = 100;
 		}
 	}
@@ -2149,7 +2409,9 @@ void key_do_add(void){
 				set_FREQ_num = 9999;
 			break;
 			
-		case SET_FREQ_KHZ:
+		case SET_FREQ_KHZ0:
+		case SET_FREQ_KHZ1:
+		case SET_FREQ_KHZ2:
 		case SET_FREQ_MHZ:
 			if(set_FREQ_num + set_pos <= 999)
 				set_FREQ_num += set_pos;
@@ -2202,7 +2464,9 @@ void key_do_sub(void){
 	switch(disp_set_unit){
 		
 		case SET_FREQ_HZ:
-		case SET_FREQ_KHZ:
+		case SET_FREQ_KHZ0:
+		case SET_FREQ_KHZ1:
+		case SET_FREQ_KHZ2:
 		case SET_FREQ_MHZ:
 			if(set_FREQ_num - 1 > set_pos)
 				set_FREQ_num -= set_pos;

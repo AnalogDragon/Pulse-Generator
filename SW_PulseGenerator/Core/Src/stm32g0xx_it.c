@@ -217,7 +217,7 @@ void TIM14_IRQHandler(void)
   /* USER CODE BEGIN TIM14_IRQn 0 */
     static uint8_t count = 10;
     
-    if((htim1.Instance->CR1 & TIM_CR1_CEN) == 0 && (htim1.Instance->BDTR & TIM_BDTR_MOE)){
+    if((htim1.Instance->CR1 & TIM_CR1_CEN) == 0 && (htim1.Instance->BDTR & TIM_BDTR_MOE) && output_mode != MODE_NORMAL){
         HAL_TIM_PWM_PWMN_Stop(&htim1, TIM_CHANNEL_1);
     }
     

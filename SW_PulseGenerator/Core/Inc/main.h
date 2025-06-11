@@ -193,7 +193,7 @@ extern volatile uint16_t adc_buffer[ADC_BUFFER_SIZE][ADC_CHANNEL_NUM];
 extern volatile double adc_value[ADC_CHANNEL_NUM];
 extern uint8_t output_sta;
 extern volatile uint8_t pwm_timer_lock;
-
+extern uint16_t set_pos;
 
 #define KEY_ADD		0
 #define KEY_SUB		1
@@ -204,14 +204,29 @@ extern volatile uint8_t pwm_timer_lock;
 #define KEY_OUTPUT	6
 
 #define SET_FREQ_HZ 	0
-#define SET_FREQ_KHZ 	1
-#define SET_FREQ_MHZ 	2
+#define SET_FREQ_KHZ0 	1
+#define SET_FREQ_KHZ1 	2
+#define SET_FREQ_KHZ2 	3
+#define SET_FREQ_MHZ 	4
 
-#define SET_PULSE_NS 	3
-#define SET_PULSE_US 	4
+#define SET_PULSE_NS 	5
+#define SET_PULSE_US 	6
 
-#define SET_VOLT_MV 	5
-#define SET_VOLT_V 		6
+#define SET_VOLT_MV 	7
+#define SET_VOLT_V 		8
+
+
+#define KEY_SIZE 7
+#define KEY_TIME_TRIG	10
+
+extern uint8_t press_time[KEY_SIZE];
+extern uint8_t release_time[KEY_SIZE];
+extern uint8_t key_sta[KEY_SIZE];
+
+#define FLASH_PAGE_SAVE   0x0F
+#define FLASH_ADDR_SAVE   (0x08000000 + FLASH_PAGE_SAVE * 0x800)
+
+
 
 /* USER CODE END Private defines */
 
