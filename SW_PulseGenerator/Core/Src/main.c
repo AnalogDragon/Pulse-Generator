@@ -182,8 +182,8 @@ uint8_t cal_task(void){
 	/**/
 	if(key_sta[KEY_ADD]){
 		if(done[KEY_ADD] == 0 || done[KEY_ADD] == 50){
-			if(hv_calib_num + set_pos < 40000)hv_calib_num += set_pos;
-			else hv_calib_num = 40000;
+			if(hv_calib_num + set_pos < 20000)hv_calib_num += set_pos;
+			else hv_calib_num = 20000;
 		}
 		done[KEY_ADD] ++;
 		if(done[KEY_ADD] == 60)done[KEY_ADD] = 50;
@@ -195,8 +195,8 @@ uint8_t cal_task(void){
 	/**/
 	if(key_sta[KEY_SUB]){
 		if(done[KEY_SUB] == 0 || done[KEY_SUB] == 50){
-			if(hv_calib_num - set_pos > 1000)hv_calib_num -= set_pos;
-			else hv_calib_num = 1000;
+			if(hv_calib_num - set_pos > 8000)hv_calib_num -= set_pos;
+			else hv_calib_num = 8000;
 		}
 		done[KEY_SUB] ++;
 		if(done[KEY_SUB] == 60)done[KEY_SUB] = 50;
@@ -242,7 +242,7 @@ uint8_t cal_task(void){
 		volt_filter = volt_filter * 0.99 + adc_value[HV_CH]*0.01;
 		
 		if(done[KEY_OUTPUT] == 250){
-			hv_calib_gain = hv_calib_num / volt_filter / 10;
+			hv_calib_gain = (double)(hv_calib_num - 4000) / (volt_filter - 400) / 10;
 			return 1;
 		}
 		if(done[KEY_OUTPUT] < 250)
@@ -290,10 +290,10 @@ uint8_t  save_cal(void){
 
 void load_cal(void) {
     uint64_t *pData = (uint64_t*)FLASH_ADDR_SAVE;
-    if (*pData == 0xFFFFFFFF) {
+	memcpy(&hv_calib_gain, pData, sizeof(double));
+    if (isnan(hv_calib_gain)) {
         hv_calib_gain = 1.0;  // 默认值（Flash 未写入）
     } else {
-        memcpy(&hv_calib_gain, pData, sizeof(double));
     }
 }
 
@@ -308,7 +308,7 @@ void voltage_cal(void){
 		HAL_Delay(10);
 	}
 	
-	if(save_cal()){
+	if(hv_calib_gain > 1.2 || hv_calib_gain < 0.8 || save_cal()){
 		while(!disp_str_step(disp_failed,sizeof(disp_failed)/2))
 			HAL_Delay(100);
 	}
@@ -343,8 +343,8 @@ void set_limit(void){
 		if(set_VOLT_num < 5){
 			set_VOLT_num = 5;
 		}
-		else if(set_VOLT_num > 1000){
-			set_VOLT_num = 1000;
+		else if(set_VOLT_num > 3200){
+			set_VOLT_num = 3200;
 		}
 	}
 	else if(set_VOLT_unit == SET_VOLT_V){
@@ -2131,10 +2131,10 @@ void disp_task(void){
 		
         case SET_VOLT_V:
 			memcpy(g_ram,disp_V,12);
-			if(high_voltage_out < 10)
-				disp_num(high_voltage_out,1,3,0);
-			else if(high_voltage_out < 100)
-				disp_num(high_voltage_out,2,2,0);
+			if(high_voltage_out < 200){
+				g_ram[1] = DISP_CHAR_L;
+				g_ram[2] = DISP_CHAR_O;
+			}
 			else if(high_voltage_out < 1000)
 				disp_num(high_voltage_out,3,1,0);
 			else
@@ -2175,7 +2175,7 @@ void adc_calc(void){
     }
 		
     adc_value[0] = (double)(temp0 * 2.414) / (double)temp3;
-    adc_value[1] = (double)(temp1 * 1212) * hv_calib_gain / (double)temp3;
+    adc_value[1] = ((double)(temp1 * 1212) / (double)temp3 - 400) * hv_calib_gain + 400;
     adc_value[2] = (double)(temp2 * 1.212) / (double)temp3;
     
 	if(dac_sta){
@@ -2200,7 +2200,7 @@ void dac_set_volt(uint16_t volt_mv){
         dac_sta = DISABLE;
         return;
     }
-    temp = (uint32_t)volt_mv*10000/1031;
+    temp = (uint32_t)volt_mv*10000/3300;
     htimDAC.Instance->CCR1 = temp;
     
     dac_fb = volt_mv;
@@ -2442,9 +2442,9 @@ void key_do_add(void){
 			break;
 			
 		case SET_VOLT_MV:
-			if(set_VOLT_num + set_pos <= 1000)
+			if(set_VOLT_num + set_pos <= 3200)
 				set_VOLT_num += set_pos;
-			else set_VOLT_num = 1000;
+			else set_VOLT_num = 3200;
 			break;
 			
 		default:
