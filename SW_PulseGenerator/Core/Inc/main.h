@@ -208,7 +208,7 @@ extern uint16_t set_pos;
 #define SET_FREQ_KHZ1 	2
 #define SET_FREQ_KHZ2 	3
 #define SET_FREQ_MHZ 	4
-
+ 
 #define SET_PULSE_NS 	5
 #define SET_PULSE_US 	6
 

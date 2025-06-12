@@ -2295,6 +2295,23 @@ void disp_output_sta_task(void){
 	}
 }
 
+
+uint16_t  firstDigit(uint16_t num) {
+    if (num == 0) {
+        return 0; // 处理 0 的情况
+    }
+
+    uint16_t result = 1;
+
+    // 计算数字的位数
+    while (num != 0) {
+        num /= 10;
+        result *= 10;
+    }
+
+    return result / 10;
+}
+
 void key_do_output(void){
 	if(output_sta == DISABLE){
 		set_pos = 0;
@@ -2320,7 +2337,10 @@ void key_do_pulse(uint8_t press_long){
 	
 	if(disp_set_unit != set_PULSE_unit){
 		disp_set_unit = set_PULSE_unit;
-		set_pos = 0;
+		set_pos = firstDigit(set_PULSE_num);
+	}
+	if(set_pos == 0){
+		set_pos = firstDigit(set_PULSE_num);
 	}
 }
 
@@ -2339,7 +2359,10 @@ void key_do_volt(uint8_t press_long){
 	
 	if(disp_set_unit != set_VOLT_unit){
 		disp_set_unit = set_VOLT_unit;
-		set_pos = 0;
+		set_pos = firstDigit(set_VOLT_num);
+	}
+	if(set_pos == 0){
+		set_pos = firstDigit(set_VOLT_num);
 	}
 }
 
@@ -2366,7 +2389,10 @@ void key_do_freq(uint8_t press_long){
 	
 	if(disp_set_unit != set_FREQ_unit){
 		disp_set_unit = set_FREQ_unit;
-		set_pos = 0;
+		set_pos = firstDigit(set_FREQ_num);
+	}
+	if(set_pos == 0){
+		set_pos = firstDigit(set_FREQ_num);
 	}
 }
 
@@ -2403,7 +2429,10 @@ void key_do_add(void){
 	switch(disp_set_unit){
 		
 		case SET_FREQ_HZ:
-			if(set_FREQ_num + set_pos <= 9999)
+			if(set_FREQ_num == 1 && set_pos > 1){
+				set_FREQ_num = set_pos;
+			}
+			else if(set_FREQ_num + set_pos <= 9999)
 				set_FREQ_num += set_pos;
 			else
 				set_FREQ_num = 9999;
@@ -2413,7 +2442,10 @@ void key_do_add(void){
 		case SET_FREQ_KHZ1:
 		case SET_FREQ_KHZ2:
 		case SET_FREQ_MHZ:
-			if(set_FREQ_num + set_pos <= 999)
+			if(set_FREQ_num == 1 && set_pos > 1){
+				set_FREQ_num = set_pos;
+			}
+			else if(set_FREQ_num + set_pos <= 999)
 				set_FREQ_num += set_pos;
 			else
 				set_FREQ_num = 999;
@@ -2435,14 +2467,20 @@ void key_do_add(void){
 			break;
 			
 		case SET_PULSE_US:
-			if(set_PULSE_num + set_pos <= 5000)
+			if(set_PULSE_num == 1 && set_pos > 1){
+				set_PULSE_num = set_pos;
+			}
+			else if(set_PULSE_num + set_pos <= 5000)
 				set_PULSE_num += set_pos;
 			else
 				set_PULSE_num = 5000;
 			break;
 			
 		case SET_VOLT_MV:
-			if(set_VOLT_num + set_pos <= 3200)
+			if(set_VOLT_num == 5 && set_pos > 10){
+				set_VOLT_num = set_pos;
+			}
+			else if(set_VOLT_num + set_pos <= 3200)
 				set_VOLT_num += set_pos;
 			else set_VOLT_num = 3200;
 			break;
