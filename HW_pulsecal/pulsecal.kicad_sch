@@ -4,6 +4,12 @@
 	(generator_version "8.0")
 	(uuid "43467254-5f0e-4dea-8ff8-85167d0157c0")
 	(paper "A4")
+	(title_block
+		(title "率表/定标器测试工具")
+		(date "2025-06-14")
+		(rev "V1.1")
+		(company "模拟龙仪器仪表")
+	)
 	(lib_symbols
 		(symbol "Amplifier_Operational:TLV9061xDBV"
 			(pin_names
@@ -3796,6 +3802,18 @@
 		(uuid 6fa735cd-fa8c-49e6-b783-0f06fc9fd2c6)
 	)
 	(rectangle
+		(start 40.64 97.79)
+		(end 63.5 116.84)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(fill
+			(type none)
+		)
+		(uuid 767f8ba4-3d3f-43af-bce0-ebf8c72d759d)
+	)
+	(rectangle
 		(start 91.44 99.06)
 		(end 102.87 106.68)
 		(stroke
@@ -5556,6 +5574,16 @@
 			)
 		)
 		(uuid "50b0451a-9c53-4404-9e49-c995c860afe3")
+	)
+	(text "建议用一颗5~10nF的高压电容代替"
+		(exclude_from_sim no)
+		(at 52.324 96.52 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+		(uuid "b5252a7f-4a1d-4e9f-906b-be6a2e42162a")
 	)
 	(text "CH1N\n\nCH1"
 		(exclude_from_sim no)
@@ -11380,9 +11408,8 @@
 		)
 	)
 	(sheet
-		(at 180.34 170.18)
-		(size 12.7 8.89)
-		(fields_autoplaced yes)
+		(at 180.34 168.91)
+		(size 12.7 6.35)
 		(stroke
 			(width 0.1524)
 			(type solid)
@@ -11392,7 +11419,7 @@
 		)
 		(uuid "31bb9b41-8470-4525-a6c8-b71028fc7c7e")
 		(property "Sheetname" "POWER"
-			(at 180.34 169.4684 0)
+			(at 183.388 172.72 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -11401,7 +11428,7 @@
 			)
 		)
 		(property "Sheetfile" "power.kicad_sch"
-			(at 180.34 179.6546 0)
+			(at 180.34 175.8446 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -11419,9 +11446,8 @@
 		)
 	)
 	(sheet
-		(at 195.58 170.18)
-		(size 12.7 8.89)
-		(fields_autoplaced yes)
+		(at 195.58 168.91)
+		(size 12.7 6.35)
 		(stroke
 			(width 0.1524)
 			(type solid)
@@ -11431,7 +11457,7 @@
 		)
 		(uuid "d2703941-56f7-4b92-8dcf-579d6bf42feb")
 		(property "Sheetname" "DISP"
-			(at 195.58 169.4684 0)
+			(at 198.628 172.72 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -11440,7 +11466,7 @@
 			)
 		)
 		(property "Sheetfile" "disp.kicad_sch"
-			(at 195.58 179.6546 0)
+			(at 195.58 175.8446 0)
 			(effects
 				(font
 					(size 1.27 1.27)
