@@ -3524,6 +3524,48 @@
 			(layer "F.SilkS")
 			(uuid "5ff50392-8953-483a-b8f8-0e69e9b0f61e")
 		)
+		(fp_line
+			(start -6 -3.2)
+			(end 6 -3.2)
+			(stroke
+				(width 0.05)
+				(type default)
+			)
+			(layer "Edge.Cuts")
+			(uuid "ad5847b4-5191-400a-b7b7-37fe63484d55")
+		)
+		(fp_line
+			(start 6 -1.2)
+			(end -6 -1.2)
+			(stroke
+				(width 0.05)
+				(type default)
+			)
+			(layer "Edge.Cuts")
+			(uuid "2cff4ca3-1aac-44c4-afc6-b869292e9a56")
+		)
+		(fp_arc
+			(start -6 -1.2)
+			(mid -7 -2.2)
+			(end -6 -3.2)
+			(stroke
+				(width 0.05)
+				(type default)
+			)
+			(layer "Edge.Cuts")
+			(uuid "185f7b50-9255-4910-8738-225ad95246a0")
+		)
+		(fp_arc
+			(start 6 -3.2)
+			(mid 7 -2.2)
+			(end 6 -1.2)
+			(stroke
+				(width 0.05)
+				(type default)
+			)
+			(layer "Edge.Cuts")
+			(uuid "e7436315-9fb2-4a6b-b68b-4766826b93d8")
+		)
 		(fp_text user "${REFERENCE}"
 			(at 0 -2.5 0)
 			(unlocked yes)
@@ -3537,8 +3579,8 @@
 			)
 		)
 		(pad "1" smd roundrect
-			(at 0 0.75)
-			(size 2 6)
+			(at 0 2.25)
+			(size 2 3)
 			(layers "F.Cu" "F.Paste" "F.Mask")
 			(roundrect_rratio 0.0625)
 			(net 2 "Net-(J1-In)")
@@ -24277,20 +24319,20 @@
 		(uuid "55abeb73-3958-4edd-a8fd-8bdde2e6cde4")
 	)
 	(segment
-		(start 51.31 43.25)
-		(end 51.31 48.39)
-		(width 1)
-		(layer "F.Cu")
-		(net 2)
-		(uuid "70209155-601c-4aba-9d9d-bde1227251bb")
-	)
-	(segment
 		(start 51.3 48.4)
 		(end 55.5375 48.4)
 		(width 1)
 		(layer "F.Cu")
 		(net 2)
 		(uuid "70b6c242-d330-4261-ace3-274864e74607")
+	)
+	(segment
+		(start 51.31 44.75)
+		(end 51.31 48.39)
+		(width 1)
+		(layer "F.Cu")
+		(net 2)
+		(uuid "7b0eea0e-6f0d-4ed0-9563-8bcab1133814")
 	)
 	(segment
 		(start 51.31 48.39)
