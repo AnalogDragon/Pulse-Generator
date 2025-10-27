@@ -7044,7 +7044,7 @@
 				)
 			)
 		)
-		(property "Value" "NC"
+		(property "Value" "1K"
 			(at 0 1.17 0)
 			(layer "F.Fab")
 			(hide yes)

@@ -111,7 +111,7 @@ extern uint8_t set_VOLT_unit;
 
 extern int16_t set_FREQ_num;	//50.0Hz
 extern int16_t set_PULSE_num;	//5.0uS
-extern int16_t set_VOLT_num;	//500mV
+extern int16_t set_VOLT_num;	//50mV
 
 extern uint8_t disp_set_unit;
 
@@ -338,13 +338,13 @@ burst：001KHZ~999KHZ，0.01MHZ~5.00MHZ
 
 void set_limit(void){
 	
-	//电压限制：0005mV~1000mV
+	//电压限制：SET_VOLT_MIN ~ SET_VOLT_MAX
 	if(set_VOLT_unit == SET_VOLT_MV){
-		if(set_VOLT_num < 5){
-			set_VOLT_num = 5;
+		if(set_VOLT_num < SET_VOLT_MIN){
+			set_VOLT_num = SET_VOLT_MIN;
 		}
-		else if(set_VOLT_num > 3200){
-			set_VOLT_num = 3200;
+		else if(set_VOLT_num > SET_VOLT_MAX){
+			set_VOLT_num = SET_VOLT_MAX;
 		}
 	}
 	else if(set_VOLT_unit == SET_VOLT_V){
@@ -492,7 +492,7 @@ void set_limit(void){
 
 		set_FREQ_num = 500;	//50.0Hz
 		set_PULSE_num = 50;	//5.0uS
-		set_VOLT_num = 500;	//500mV
+		set_VOLT_num = 500;	//50mV
 	}
 	
 	//计算脉宽不能低于1/2周期
@@ -2011,7 +2011,7 @@ uint8_t set_VOLT_unit = SET_VOLT_MV;
 
 int16_t set_FREQ_num = 500;	//50.0Hz
 int16_t set_PULSE_num = 50;	//5.0uS
-int16_t set_VOLT_num = 500;	//500mV
+int16_t set_VOLT_num = 500;	//50mV
 
 uint8_t disp_set_unit = SET_FREQ_HZ;
 
@@ -2126,7 +2126,7 @@ void disp_task(void){
 		
         case SET_VOLT_MV:
 			memcpy(g_ram,disp_MV,12);
-			disp_num_hid(set_VOLT_num,4,0,0,set_pos_buf);
+			disp_num_hid(set_VOLT_num,4,0,1,set_pos_buf);
             break;
 		
         case SET_VOLT_V:
@@ -2200,7 +2200,7 @@ void dac_set_volt(uint16_t volt_mv){
         dac_sta = DISABLE;
         return;
     }
-    temp = (uint32_t)volt_mv*10000/3300;
+    temp = (uint32_t)volt_mv;
     htimDAC.Instance->CCR1 = temp;
     
     dac_fb = volt_mv;
@@ -2217,8 +2217,14 @@ void dac_feedback(void){
 	volt_buffer += adc_value[DAC_CH];
 	
 	if(count >= 50){
-		temp = volt_buffer*20;
-        if(dac_fb > temp + 1 && htimDAC.Instance->CCR1 < 10000){
+		temp = volt_buffer * 20000 /101;
+        if(dac_fb > temp + 10 && htimDAC.Instance->CCR1 < 9995){
+			htimDAC.Instance->CCR1+=10;
+        }
+        else if(dac_fb + 10 < temp && htimDAC.Instance->CCR1 > 10){
+			htimDAC.Instance->CCR1-=10;
+        }
+        else if(dac_fb > temp + 1 && htimDAC.Instance->CCR1 < 10000){
 			htimDAC.Instance->CCR1++;
         }
         else if(dac_fb + 1 < temp && htimDAC.Instance->CCR1 > 0){
@@ -2477,12 +2483,19 @@ void key_do_add(void){
 			break;
 			
 		case SET_VOLT_MV:
-			if(set_VOLT_num == 5 && set_pos > 10){
-				set_VOLT_num = set_pos;
+			if(set_pos == 1){
+				if(set_VOLT_num + 5 <= SET_VOLT_MAX)
+					set_VOLT_num += 5;
+				else set_VOLT_num = SET_VOLT_MAX;
 			}
-			else if(set_VOLT_num + set_pos <= 3200)
-				set_VOLT_num += set_pos;
-			else set_VOLT_num = 3200;
+			else{
+				if(set_VOLT_num == SET_VOLT_MIN){
+					set_VOLT_num = set_pos;
+				}
+				else if(set_VOLT_num + set_pos <= SET_VOLT_MAX)
+					set_VOLT_num += set_pos;
+				else set_VOLT_num = SET_VOLT_MAX;
+			}
 			break;
 			
 		default:
@@ -2536,10 +2549,18 @@ void key_do_sub(void){
 			break;
 			
 		case SET_VOLT_MV:
-			if(set_VOLT_num - 5 > set_pos)
-				set_VOLT_num -= set_pos;
-			else 
-				set_VOLT_num = 5;
+			if(set_pos == 1){
+				if(set_VOLT_num - SET_VOLT_MIN > 5)
+					set_VOLT_num -= 5;
+				else 
+					set_VOLT_num = SET_VOLT_MIN;
+			}
+			else{
+				if(set_VOLT_num - SET_VOLT_MIN > set_pos)
+					set_VOLT_num -= set_pos;
+				else 
+					set_VOLT_num = SET_VOLT_MIN;
+			}
 			break;
 		default:
 			;

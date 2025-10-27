@@ -219,6 +219,10 @@ extern uint16_t set_pos;
 #define KEY_SIZE 7
 #define KEY_TIME_TRIG	10
 
+/*----*/
+#define SET_VOLT_MIN	20
+#define SET_VOLT_MAX	9995
+
 extern uint8_t press_time[KEY_SIZE];
 extern uint8_t release_time[KEY_SIZE];
 extern uint8_t key_sta[KEY_SIZE];
