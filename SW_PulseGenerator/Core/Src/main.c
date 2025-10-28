@@ -157,6 +157,9 @@ const uint16_t disp_failed[12] ={DISP_CHAR_F,DISP_CHAR_A,DISP_CHAR_I,DISP_CHAR_L
 
 
 double hv_calib_gain = 1.0;
+double fb_calib_zero = 0.0;
+uint8_t fb_calib_flag = 0;
+uint32_t fb_calib_count = 0;
 
 uint32_t hv_calib_num = 9000;
 
@@ -785,6 +788,45 @@ void Key_Task(void){
 	set_limit();
 }
 
+//这里关掉DAC_PWM引脚后，校准DAC零点
+void PA6_ModeSwitch(uint8_t cmd) {
+    static uint8_t saved_mode = 0xFF;  // 0xFF表示未保存模式
+    static uint8_t is_saved = 0;       // 是否已保存标志
+    
+    if (cmd == 1) {
+        // 配置为浮空输入并保存原模式
+        if (!is_saved) {
+            // 读取PA6当前配置
+            uint32_t moder = GPIOA->MODER;
+            uint32_t pupdr = GPIOA->PUPDR;
+            
+            // 提取模式位: [MODER1:0] [PUPDR1:0]
+            saved_mode = ((moder & (0x3 << (6*2))) >> (6*2)) | 
+                        ((pupdr & (0x3 << (6*2))) >> (6*2-2));
+            
+            // 配置为浮空输入: MODER=00(输入), PUPDR=00(浮空)
+            GPIOA->MODER &= ~(0x3 << (6*2));      // MODER[13:12] = 00
+            GPIOA->PUPDR &= ~(0x3 << (6*2));      // PUPDR[13:12] = 00
+            
+            is_saved = 1;
+        }
+    } 
+    else if (cmd == 0) {
+        // 恢复原配置
+        if (is_saved) {
+            // 从saved_mode恢复MODER和PUPDR
+            uint8_t moder_bits = saved_mode & 0x3;
+            uint8_t pupdr_bits = (saved_mode >> 2) & 0x3;
+            
+            GPIOA->MODER = (GPIOA->MODER & ~(0x3 << (6*2))) | (moder_bits << (6*2));
+            GPIOA->PUPDR = (GPIOA->PUPDR & ~(0x3 << (6*2))) | (pupdr_bits << (6*2));
+            
+            // 清除保存状态
+            is_saved = 0;
+            saved_mode = 0xFF;
+        }
+    }
+}
 
 
 /* USER CODE END 0 */
@@ -843,7 +885,13 @@ int main(void)
 	//
 	set_output(DISABLE);
 	
+	PA6_ModeSwitch(1);
+	fb_calib_flag = 1;
+	fb_calib_count = 0;
     disp_on();
+	fb_calib_flag = 0;
+	PA6_ModeSwitch(0);
+	fb_calib_zero /= fb_calib_count;
 	
 	if(key_sta[KEY_VOLT] && key_sta[KEY_MOVE]){
 		voltage_cal();
@@ -2174,13 +2222,21 @@ void adc_calc(void){
         temp3 += adc_buffer[i][3];
     }
 		
-    adc_value[0] = (double)(temp0 * 2.414) / (double)temp3;
-    adc_value[1] = ((double)(temp1 * 1212) / (double)temp3 - 400) * hv_calib_gain + 400;
-    adc_value[2] = (double)(temp2 * 1.212) / (double)temp3;
+    adc_value[BAT_CH] = (double)(temp0 * 2.414) / (double)temp3;
+    adc_value[HV_CH] = (double)(temp1 * 1212) / (double)temp3 * hv_calib_gain;
+	if(fb_calib_flag)
+		adc_value[DAC_CH] = (double)(temp2 * 1.212) / (double)temp3;
+	else
+		adc_value[DAC_CH] = (double)(temp2 * 1.212) / (double)temp3 - fb_calib_zero;
     
 	if(dac_sta){
 		//adc闭环函数
 		dac_feedback();
+	}
+	
+	if(fb_calib_flag){
+		fb_calib_count++;
+		fb_calib_zero+=adc_value[DAC_CH];
 	}
 }
 
@@ -2217,6 +2273,7 @@ void dac_feedback(void){
 	volt_buffer += adc_value[DAC_CH];
 	
 	if(count >= 50){
+		
 		temp = volt_buffer * 20000 /101;
         if(dac_fb > temp + 10 && htimDAC.Instance->CCR1 < 9995){
 			htimDAC.Instance->CCR1+=10;
@@ -2489,7 +2546,7 @@ void key_do_add(void){
 				else set_VOLT_num = SET_VOLT_MAX;
 			}
 			else{
-				if(set_VOLT_num == SET_VOLT_MIN){
+				if(set_VOLT_num == SET_VOLT_MIN && set_pos > 10){
 					set_VOLT_num = set_pos;
 				}
 				else if(set_VOLT_num + set_pos <= SET_VOLT_MAX)

@@ -6,8 +6,8 @@
 	(paper "A4")
 	(title_block
 		(title "率表/定标器测试工具")
-		(date "2025-06-14")
-		(rev "V1.1")
+		(date "2025-10-28")
+		(rev "V1.2")
 		(company "模拟龙仪器仪表")
 	)
 	(lib_symbols
