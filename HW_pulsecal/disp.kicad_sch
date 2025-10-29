@@ -1190,7 +1190,7 @@
 	)
 	(rectangle
 		(start 20.32 83.82)
-		(end 115.57 162.56)
+		(end 115.57 151.13)
 		(stroke
 			(width 0)
 			(type default)
@@ -1280,17 +1280,6 @@
 		)
 		(uuid "a69c10e1-a3c4-47fc-b48b-bfda1e390b07")
 	)
-	(text "按下设置相应的设置项，有些按两次切换单位\n"
-		(exclude_from_sim no)
-		(at 31.242 145.542 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left top)
-		)
-		(uuid "b69db945-0673-4757-95fb-b1261b16ff4d")
-	)
 	(text "-1"
 		(exclude_from_sim no)
 		(at 83.82 125.984 0)
@@ -1311,7 +1300,7 @@
 		)
 		(uuid "e7015304-5d98-4ea4-973b-fa3903f64e2b")
 	)
-	(text "换位"
+	(text "move"
 		(exclude_from_sim no)
 		(at 83.82 113.792 0)
 		(effects
