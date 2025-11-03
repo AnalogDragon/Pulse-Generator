@@ -249,7 +249,7 @@ void TIM17_IRQHandler(void)
 	if(output_mode == MODE_SINGEL_BURST){
 	}
 	else if(output_mode == MODE_REPEAT_BURST){
-		htim1.Instance->RCR = 100-1;
+		htim1.Instance->RCR = OUT_100_COUNT;
 		HAL_TIM_PWM_PWMN_Start(&htim1, TIM_CHANNEL_1);
 	}
 	else{

@@ -230,6 +230,7 @@ extern uint8_t key_sta[KEY_SIZE];
 #define FLASH_PAGE_SAVE   0x0F
 #define FLASH_ADDR_SAVE   (0x08000000 + FLASH_PAGE_SAVE * 0x800)
 
+#define OUT_100_COUNT	(100-2)
 
 
 /* USER CODE END Private defines */

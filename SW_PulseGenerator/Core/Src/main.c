@@ -883,6 +883,9 @@ int main(void)
 	//
 	set_output(DISABLE);
 	
+	output_negative = ENABLE;
+	TIM1_ReversePolarity(output_negative);
+	
 	PA6_ModeSwitch(1);
 	fb_calib_flag = 1;
 	fb_calib_count = 0;
@@ -2753,7 +2756,7 @@ HAL_StatusTypeDef TIM_ConfigFrequencyOptimized(
 						Error_Handler();
 				}
                 
-                htimPWM.Init.RepetitionCounter = 100-1;
+                htimPWM.Init.RepetitionCounter = OUT_100_COUNT;
                 htimPWM.Init.Prescaler = 0;
                 htimPWM.Init.Period = bestArr;
                 
@@ -2780,7 +2783,7 @@ HAL_StatusTypeDef TIM_ConfigFrequencyOptimized(
 						Error_Handler();
 				}
                 
-                htimPWM.Init.RepetitionCounter = 100-1;
+                htimPWM.Init.RepetitionCounter = OUT_100_COUNT;
                 htimPWM.Init.Prescaler = 0;
                 htimPWM.Init.Period = bestArr;
                 
