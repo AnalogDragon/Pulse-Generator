@@ -155,13 +155,111 @@ const uint16_t disp_calib_HV[8] ={DISP_CHAR_C,DISP_CHAR_A,DISP_CHAR_L,DISP_CHAR_
 const uint16_t disp_done[6] ={0,0,DISP_CHAR_D,DISP_CHAR_O,DISP_CHAR_N,DISP_CHAR_E}; 
 const uint16_t disp_failed[12] ={DISP_CHAR_F,DISP_CHAR_A,DISP_CHAR_I,DISP_CHAR_L,DISP_CHAR_E,DISP_CHAR_D,0,DISP_CHAR_R,DISP_CHAR_E,DISP_CHAR_T,DISP_CHAR_R,DISP_CHAR_Y}; 
 
+const uint16_t disp_1point[6] ={DISP_NUM_1|0x4000,DISP_CHAR_P,DISP_CHAR_O,DISP_CHAR_I,DISP_CHAR_N,DISP_CHAR_T}; 
+const uint16_t disp_3point[6] ={DISP_NUM_3|0x4000,DISP_CHAR_P,DISP_CHAR_O,DISP_CHAR_I,DISP_CHAR_N,DISP_CHAR_T}; 
+const uint16_t disp_5point[6] ={DISP_NUM_5|0x4000,DISP_CHAR_P,DISP_CHAR_O,DISP_CHAR_I,DISP_CHAR_N,DISP_CHAR_T}; 
+const uint16_t disp_next[6] ={0,0,DISP_CHAR_N,DISP_CHAR_E,DISP_CHAR_X,DISP_CHAR_T}; 
 
-double hv_calib_gain = 1.0;
+
+// 校准点结构体
+typedef struct {
+    double adc_value;    // ADC数值
+    double voltage;      // 电压数值
+} cal_point_t;
+
+// 校准数据结构体 - 最多5个点
+typedef struct {
+    cal_point_t points[5];  // 校准点数组
+    uint8_t point_count;    // 实际使用的点数 (0-5)
+} calibration_data_t;
+
+// 联合体 - 用于Flash存储
+typedef union {
+    calibration_data_t cal_data;           // 结构体形式访问
+    uint64_t raw_data[sizeof(calibration_data_t) / sizeof(uint64_t) + 1];  // 原始数据形式访问
+} calibration_flash_u;
+
+
+calibration_flash_u hv_calib;
+
+
 double fb_calib_zero = 0.0;
 uint8_t fb_calib_flag = 0;
 uint32_t fb_calib_count = 0;
 
-uint32_t hv_calib_num = 9000;
+uint32_t hv_calib_num;
+
+
+// 排序
+void sort_calibration_points(void) {
+    if (hv_calib.cal_data.point_count <= 1) {
+        return; // 点数不足
+    }
+    
+    // 使用冒泡排序对校准点按adc_value升序排序
+    for (int i = 0; i < hv_calib.cal_data.point_count - 1; i++) {
+        for (int j = 0; j < hv_calib.cal_data.point_count - i - 1; j++) {
+            if (hv_calib.cal_data.points[j].adc_value > hv_calib.cal_data.points[j + 1].adc_value) {
+                // 交换两个校准点
+                cal_point_t temp = hv_calib.cal_data.points[j];
+                hv_calib.cal_data.points[j] = hv_calib.cal_data.points[j + 1];
+                hv_calib.cal_data.points[j + 1] = temp;
+            }
+        }
+    }
+}
+
+
+// 检测校准数据合法性
+uint8_t check_calib(void) {
+	
+    // 1. 检查点数是否合法
+    if (hv_calib.cal_data.point_count == 0 || hv_calib.cal_data.point_count > 5) {
+        return 1; // 非法：点数超出范围
+    }
+    
+    // 2. 检查每个校准点的数据是否合理
+    for (uint8_t i = 0; i < hv_calib.cal_data.point_count; i++) {
+        cal_point_t *point = &hv_calib.cal_data.points[i];
+        
+        // 检查ADC值是否在合理范围内
+        if (point->adc_value < 20 || point->adc_value > 4000) {
+            return 1; // 非法：ADC值超出范围
+        }
+        
+        // 检查电压值是否在合理范围内
+        if (point->voltage < 20 || point->voltage > 4000) {
+            return 1; // 非法：电压值超出范围
+        }
+        
+        // 3. 检查校准点是否单调递增
+        if (i > 0) {
+            cal_point_t *prev_point = &hv_calib.cal_data.points[i-1];
+            
+            if (point->adc_value <= prev_point->adc_value) {
+                return 1; // 非法：ADC值不是单调递增
+            }
+            
+            if (point->voltage <= prev_point->voltage) {
+                return 1; // 非法：电压值不是单调递增
+            }
+            
+            // 4. 新增：检查相邻点间隔是否大于100（ADC和电压都要检查）
+            double adc_interval = point->adc_value - prev_point->adc_value;
+            double voltage_interval = point->voltage - prev_point->voltage;
+            
+            if (adc_interval <= 100.0) {
+                return 1; // 非法：ADC值间隔小于等于100
+            }
+            
+            if (voltage_interval <= 100.0) {
+                return 1; // 非法：电压值间隔小于等于100
+            }
+        }
+    }
+    
+    return 0; // 合法
+}
 
 
 uint8_t cal_task(void){
@@ -170,6 +268,9 @@ uint8_t cal_task(void){
 	uint16_t set_pos_buf = 0;
 	static uint8_t done[KEY_SIZE];
 	static double volt_filter = 0;
+	static uint32_t volt_filter_count = 0;
+	uint8_t disp_num = 1;
+	static uint8_t cal_count = 0;
 	
 	/*闪烁位*/
 	if(set_pos_count < 25){
@@ -183,10 +284,10 @@ uint8_t cal_task(void){
 	/*key*/
 	
 	/**/
-	if(key_sta[KEY_ADD]){
+	if(key_sta[KEY_ADD] && !key_sta[KEY_OUTPUT]){
 		if(done[KEY_ADD] == 0 || done[KEY_ADD] == 50){
-			if(hv_calib_num + set_pos < 20000)hv_calib_num += set_pos;
-			else hv_calib_num = 20000;
+			if(hv_calib_num + set_pos < 35000)hv_calib_num += set_pos;
+			else hv_calib_num = 35000;
 		}
 		done[KEY_ADD] ++;
 		if(done[KEY_ADD] == 60)done[KEY_ADD] = 50;
@@ -196,10 +297,10 @@ uint8_t cal_task(void){
 	}
 
 	/**/
-	if(key_sta[KEY_SUB]){
+	if(key_sta[KEY_SUB] && !key_sta[KEY_OUTPUT]){
 		if(done[KEY_SUB] == 0 || done[KEY_SUB] == 50){
-			if(hv_calib_num - set_pos > 8000)hv_calib_num -= set_pos;
-			else hv_calib_num = 8000;
+			if(hv_calib_num - 500 > set_pos)hv_calib_num -= set_pos;
+			else hv_calib_num = 500;
 		}
 		done[KEY_SUB] ++;
 		if(done[KEY_SUB] == 60)done[KEY_SUB] = 50;
@@ -236,19 +337,93 @@ uint8_t cal_task(void){
 		done[KEY_MOVE] = 0;
 	}
 	
-	memcpy(g_ram,disp_V,12);
-	disp_num_hid(hv_calib_num,5,0,1,set_pos_buf);
+	/*一点校准*/
+	if(key_sta[KEY_PULSE] && !key_sta[KEY_OUTPUT]){
+		if(done[KEY_PULSE] == 0){
+			disp_num = 0;
+			hv_calib.cal_data.point_count = 1;
+			hv_calib_num = 9000;
+			memcpy(g_ram,disp_1point,12);
+			HAL_Delay(1000);
+		}
+		if(done[KEY_PULSE] < 128)
+			done[KEY_PULSE] ++;
+	}
+	else{
+		done[KEY_PULSE] = 0;
+	}
+	
+	/*三点校准*/
+	if(key_sta[KEY_FREQ] && !key_sta[KEY_OUTPUT]){
+		if(done[KEY_FREQ] == 0){
+			disp_num = 0;
+			cal_count = 0;
+			hv_calib.cal_data.point_count = 3;
+			hv_calib_num = 5000;
+			memcpy(g_ram,disp_3point,12);
+			HAL_Delay(1000);
+		}
+		if(done[KEY_FREQ] < 128)
+			done[KEY_FREQ] ++;
+	}
+	else{
+		done[KEY_FREQ] = 0;
+	}
+	
+	/*五点校准*/
+	if(key_sta[KEY_VOLT] && !key_sta[KEY_OUTPUT]){
+		if(done[KEY_VOLT] == 0){
+			disp_num = 0;
+			cal_count = 0;
+			hv_calib.cal_data.point_count = 5;
+			hv_calib_num = 5000;
+			memcpy(g_ram,disp_5point,12);
+			HAL_Delay(1000);
+		}
+		if(done[KEY_VOLT] < 128)
+			done[KEY_VOLT] ++;
+	}
+	else{
+		done[KEY_VOLT] = 0;
+	}
+	
+	if(disp_num){
+		memcpy(g_ram,disp_V,12);
+		disp_num_hid(hv_calib_num,5,0,1,set_pos_buf);
+	}
 	
 	/**/
 	if(key_sta[KEY_OUTPUT]){
 		
-		volt_filter = volt_filter * 0.99 + adc_value[HV_CH]*0.01;
+		volt_filter += adc_value[HV_CH];
+		volt_filter_count ++;
 		
 		if(done[KEY_OUTPUT] == 250){
-			hv_calib_gain = (double)hv_calib_num / volt_filter / 10.0;
-			return 1;
+			if(hv_calib.cal_data.point_count > 1 && hv_calib.cal_data.point_count <= 5){
+				hv_calib.cal_data.points[cal_count].adc_value = volt_filter/volt_filter_count;
+				hv_calib.cal_data.points[cal_count].voltage = (double)hv_calib_num/10.0;
+				cal_count++;
+				if(cal_count >= hv_calib.cal_data.point_count){
+					return 1;
+				}
+				else{
+					memcpy(g_ram,disp_next,12);
+					if(cal_count == 1){g_ram[0] = DISP_NUM_2|0x4000;hv_calib_num = 10000;}
+					else if(cal_count == 2){g_ram[0] = DISP_NUM_3|0x4000;hv_calib_num = 15000;}
+					else if(cal_count == 3){g_ram[0] = DISP_NUM_4|0x4000;hv_calib_num = 20000;}
+					else if(cal_count == 4){g_ram[0] = DISP_NUM_5|0x4000;hv_calib_num = 25000;}
+					HAL_Delay(1000);
+				}
+			}
+			else{
+				//只校准单点
+				hv_calib.cal_data.point_count = 1;
+				hv_calib.cal_data.points[0].adc_value = volt_filter/volt_filter_count;
+				hv_calib.cal_data.points[0].voltage = (double)hv_calib_num/10.0;
+				return 1;
+			}
 		}
-		if(done[KEY_OUTPUT] < 250)
+		if(done[KEY_OUTPUT] < 251)
 			done[KEY_OUTPUT] ++;
 		for(uint8_t i=0;i<6;i++){
 			if(done[KEY_OUTPUT] > i*40){
@@ -258,9 +433,12 @@ uint8_t cal_task(void){
 	}
 	else{
 		done[KEY_OUTPUT] = 0;
-		volt_filter = adc_value[HV_CH];
+		volt_filter = 0;
+		volt_filter_count = 0;
 	}
+	
 	return 0;
+	
 }
 
 uint8_t  save_cal(void){
@@ -279,12 +457,16 @@ uint8_t  save_cal(void){
 	  HAL_FLASH_Lock();
 	  return 1;
   }
-	// 写入 Flash
-	uint64_t rawData;
-	memcpy(&rawData, &hv_calib_gain, sizeof(double));
-	if (HAL_FLASH_Program(FLASH_TYPEPROGRAM_DOUBLEWORD, FLASH_ADDR_SAVE, rawData) != HAL_OK) {
-		HAL_FLASH_Lock();
-		return 2;  // 写入失败
+	
+	// 写入Flash
+	uint32_t flash_addr = FLASH_ADDR_SAVE;
+	for (int i = 0; i < sizeof(hv_calib.raw_data) / sizeof(hv_calib.raw_data[0]); i++) {
+		if (HAL_FLASH_Program(FLASH_TYPEPROGRAM_DOUBLEWORD, flash_addr, 
+							 hv_calib.raw_data[i]) != HAL_OK) {
+			HAL_FLASH_Lock();
+			return 2;  // 写入失败
+		}
+		flash_addr += 8;
 	}
 	
   HAL_FLASH_Lock();
@@ -292,27 +474,45 @@ uint8_t  save_cal(void){
 }
 
 void load_cal(void) {
-    uint64_t *pData = (uint64_t*)FLASH_ADDR_SAVE;
-	memcpy(&hv_calib_gain, pData, sizeof(double));
-    if (isnan(hv_calib_gain)) {
-        hv_calib_gain = 1.0;  // 默认值（Flash 未写入）
-    }
-	else {
-    }
+	
+	// 从Flash读取
+	uint32_t flash_addr = FLASH_ADDR_SAVE;
+	
+	flash_addr = FLASH_ADDR_SAVE;
+	for (int i = 0; i < sizeof(hv_calib.raw_data) / sizeof(hv_calib.raw_data[0]); i++) {
+		uint64_t *flash_ptr = (uint64_t*)flash_addr;
+		hv_calib.raw_data[i] = *flash_ptr;
+		flash_addr += 8;
+	}
+	
+	if(check_calib()){
+		hv_calib.cal_data.point_count = 0;
+	}
+	
 }
 
 void voltage_cal(void){
 	while(!disp_str_step(disp_calib_HV,sizeof(disp_calib_HV)/2))
 		HAL_Delay(100);
 	
-	set_pos = 10000;
-	hv_calib_gain = 1.0;
+	memset(g_ram,0,12);
+	HAL_Delay(200);
+	
+	while(!disp_str_step(disp_1point,sizeof(disp_1point)/2))
+		HAL_Delay(100);
+	
+	set_pos = 1000;
+	hv_calib_num = 9000;
+	hv_calib.cal_data.point_count = 1;
 	
 	while(!cal_task()){
 		HAL_Delay(10);
 	}
 	
-	if(hv_calib_gain > 1.2 || hv_calib_gain < 0.8 || save_cal()){
+	//排序
+	sort_calibration_points();
+	
+	if(check_calib() || save_cal()){
 		while(!disp_str_step(disp_failed,sizeof(disp_failed)/2))
 			HAL_Delay(100);
 	}
@@ -325,7 +525,74 @@ void voltage_cal(void){
 }
 
 
+double hv_cal_cal(double hv_adc){
+    if(hv_calib.cal_data.point_count == 0)
+        return hv_adc;
+    
+    // 如果ADC值小于等于0，直接返回0（0点默认准确）
+    if(hv_adc <= 0.0)
+        return 0.0;
+    
+    calibration_data_t* cal_data = &hv_calib.cal_data;
+    
+    // 单独处理单点校准的情况 - 直接使用比例计算
+    if (cal_data->point_count == 1) {
+        return hv_adc * cal_data->points[0].voltage / cal_data->points[0].adc_value;
+    }
+    
+    // 多点校准的情况
+    for(int i = 0; i < cal_data->point_count; i++) {
+        // 如果正好等于某个校准点，直接返回对应的电压值
+        if(hv_adc == cal_data->points[i].adc_value) {
+            return cal_data->points[i].voltage;
+        }
+        
+        // 如果小于第一个校准点，在0点和第一个校准点之间线性插值
+        if(i == 0 && hv_adc < cal_data->points[i].adc_value) {
+            double ratio = hv_adc / cal_data->points[i].adc_value;
+            return cal_data->points[i].voltage * ratio;
+        }
+        
+        // 如果在两个校准点之间，进行线性插值
+        if(i > 0 && hv_adc < cal_data->points[i].adc_value) {
+            double prev_adc = cal_data->points[i-1].adc_value;
+            double prev_volt = cal_data->points[i-1].voltage;
+            double curr_adc = cal_data->points[i].adc_value;
+            double curr_volt = cal_data->points[i].voltage;
+            
+            // 线性插值公式
+            double ratio = (hv_adc - prev_adc) / (curr_adc - prev_adc);
+            return prev_volt + (curr_volt - prev_volt) * ratio;
+        }
+        
+        // 如果大于最后一个校准点，使用最后一个区间的斜率进行外推
+        if(i == cal_data->point_count - 1 && hv_adc > cal_data->points[i].adc_value) {
+            // 使用最后两个点的斜率外推
+            double prev_adc = cal_data->points[i-1].adc_value;
+            double prev_volt = cal_data->points[i-1].voltage;
+            double curr_adc = cal_data->points[i].adc_value;
+            double curr_volt = cal_data->points[i].voltage;
+            
+            double slope = (curr_volt - prev_volt) / (curr_adc - prev_adc);
+            return curr_volt + slope * (hv_adc - curr_adc);
+        }
+    }
+    
+    // 理论上不会执行到这里，但为了安全返回原始值
+    return hv_adc;
+}
 
+
+/*----------------------------------------------------------------------------------*/
+/*----------------------------------------------------------------------------------*/
+/*----------------------------------------------------------------------------------*/
+/*----------------------------------------------------------------------------------*/
+/*----------------------------------------------------------------------------------*/
+/*----------------------------------------------------------------------------------*/
+/*----------------------------------------------------------------------------------*/
+/*----------------------------------------------------------------------------------*/
+/*----------------------------------------------------------------------------------*/
+/*----------------------------------------------------------------------------------*/
 
 /*
 频率范围：
@@ -2068,7 +2335,7 @@ void disp_task(void){
 	
 	/*显示电压频率降低*/
 	if(high_voltage_counter < 20){
-		high_voltage_filter += adc_value[HV_CH];
+		high_voltage_filter += hv_cal_cal(adc_value[HV_CH]);
 		high_voltage_counter++;
 	}
 	else{
@@ -2208,7 +2475,7 @@ void adc_calc(void){
     }
 		
     adc_value[BAT_CH] = (double)(temp0 * 2.414) / (double)temp3;
-    adc_value[HV_CH] = (double)(temp1 * 1212) / (double)temp3 * hv_calib_gain;
+    adc_value[HV_CH] = (double)(temp1 * 1213.2) / (double)temp3; //直接计算得到的高压值，还需要分段查表
 	if(fb_calib_flag)
 		adc_value[DAC_CH] = (double)(temp2 * 1.212) / (double)temp3;
 	else
