@@ -170,13 +170,13 @@ typedef struct {
 // 校准数据结构体 - 最多5个点
 typedef struct {
     cal_point_t points[5];  // 校准点数组
-    uint8_t point_count;    // 实际使用的点数 (0-5)
+    uint64_t point_count;    // 实际使用的点数 (0-5)
 } calibration_data_t;
 
 // 联合体 - 用于Flash存储
 typedef union {
     calibration_data_t cal_data;           // 结构体形式访问
-    uint64_t raw_data[sizeof(calibration_data_t) / sizeof(uint64_t) + 1];  // 原始数据形式访问
+    uint64_t raw_data[sizeof(calibration_data_t) / sizeof(uint64_t)];  // 原始数据形式访问
 } calibration_flash_u;
 
 
@@ -271,6 +271,8 @@ uint8_t cal_task(void){
 	static uint32_t volt_filter_count = 0;
 	uint8_t disp_num = 1;
 	static uint8_t cal_count = 0;
+	
+	if(cal_count >= 5)cal_count = 0;
 	
 	/*闪烁位*/
 	if(set_pos_count < 25){
