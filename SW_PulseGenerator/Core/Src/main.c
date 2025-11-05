@@ -130,6 +130,8 @@ volatile uint8_t pwm_timer_lock = 0;
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
+const uint16_t disp_ver[6] = {DISP_CHAR_V,DISP_CHAR_E,DISP_CHAR_R|0x4000,0,DISP_NUM_1|0x4000,DISP_NUM_2};
+
 
 uint16_t g_ram[6] = {0};
 const uint16_t disp_output[6] = {DISP_CHAR_O,DISP_CHAR_U,DISP_CHAR_T,DISP_CHAR_P,DISP_CHAR_U,DISP_CHAR_T};
@@ -2288,21 +2290,28 @@ void disp_num_hid(uint32_t num,uint8_t len,uint8_t pos,uint8_t e10,uint32_t hidd
 }
 
 void disp_on(void){
-	while(!disp_str_step(disp_normal_mode,sizeof(disp_normal_mode)/2))
-		HAL_Delay(100);
+	
+	while(!disp_str_step(disp_ver,sizeof(disp_ver)/2))
+		HAL_Delay(30);
+	
+	memset(g_ram,0,12);
+	HAL_Delay(100);
 	
 	g_ram[0] = DISP_CHAR_B;
 	g_ram[1] = DISP_CHAR_A;
 	g_ram[2] = DISP_CHAR_T;
 	g_ram[5] = DISP_CHAR_V;
 	
-	for(uint8_t i=0;i<10;i++){
+	for(uint8_t i=0;i<15;i++){
 		disp_num((uint32_t)((adc_value[BAT_CH]+0.05)*10),2,3,1);
 		HAL_Delay(100);
 	}
 	
 	memset(g_ram,0,12);
 	HAL_Delay(200);
+	
+	while(!disp_str_step(disp_normal_mode,sizeof(disp_normal_mode)/2))
+		HAL_Delay(100);
 }
 
 
