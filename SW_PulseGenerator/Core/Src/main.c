@@ -431,7 +431,7 @@ uint8_t cal_task(void){
 			done[KEY_OUTPUT] ++;
 		for(uint8_t i=0;i<6;i++){
 			if(done[KEY_OUTPUT] > i*40){
-				g_ram[i] = rand();
+				g_ram[i] = rand()&rand();
 			}
 		}
 	}
@@ -2442,6 +2442,11 @@ void disp_task(void){
 		
         case SET_VOLT_V:
 			memcpy(g_ram,disp_V,12);
+			if(high_voltage_out >= 2600){
+				if(set_pos_count > 20){
+					break;
+				}
+			}
 			if(high_voltage_out < 10)
 				disp_num(high_voltage_out,1,3,0);
 			else if(high_voltage_out < 100)
@@ -2485,7 +2490,7 @@ void adc_calc(void){
         temp3 += adc_buffer[i][3];
     }
 		
-    adc_value[BAT_CH] = (double)(temp0 * 2.414) / (double)temp3;
+    adc_value[BAT_CH] = (double)(temp0 * 2.424) / (double)temp3;
     adc_value[HV_CH] = (double)(temp1 * 1213.2) / (double)temp3; //直接计算得到的高压值，还需要分段查表
 	if(fb_calib_flag)
 		adc_value[DAC_CH] = (double)(temp2 * 1.212) / (double)temp3;
