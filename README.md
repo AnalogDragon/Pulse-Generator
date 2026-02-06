@@ -1,56 +1,59 @@
-**脉冲发生器**  
+**Pulse Generator**  
   
-用于测试校准率表或定标器等剂量率仪器。stm32g0，kicad。  
+[中文](./README-zh.md)  
+
+Used for testing and calibrating dose rate instruments such as survey meters or calibrators. STM32G0, KiCad.  
   
-功能：  
-- 1、产生2mV\~1000mV、500uS\~50nS、频率可调，正负可调的脉冲,用来校准或验证性能；  
-- 2、多种模式；  
-- 3、输出接口改为MHV接口（之前的劣质BNC会击穿失效）；  
-- 4、支持USB供电与电池供电，USB接入时自动断开电池；  
+This device was built because I purchased a LUDLUM Model 3 and a Model 2360, both of which require calibration of multiple threshold levels, so I made this small tool for that purpose.  
   
-## 按键  
+Functions:  
+- 1. Generates adjustable pulses with amplitude 2 mV–1000 mV, pulse width 50 nS–500 µS, adjustable frequency, and selectable positive/negative polarity, for calibration or performance verification;  
+- 2. Multiple operating modes;  
+- 3. Output interface changed to MHV connector (previous low-quality BNC connectors could suffer dielectric breakdown);  
+- 4. Supports USB power supply and battery power; when USB is connected, the battery is automatically disconnected;  
+
+## Buttons  
 
 ![keys](./IMG.jpg)  
 
-**按键功能描述**  
-  
-- A：**加** 按键，当有数字的某位选中时，按下可以+1S；  
-- B：**切换/模式** 按键，**短按**可以切换选择数字的位置，**长按**可以切换**模式**（详见[模式](#模式)）。  
-- C：**减** 按键，当有数字的某位选中时，按下可以-1S；  
-- D：**脉宽** 按键，短按设置，长按切换倍率。范围500uS\~50nS，最小分步进50nS，有效数字4位；  
-- E：**频率** 按键，短按设置，长按切换倍率。范围5MHz\~0.1Hz，有效数字3或4位；  
-- F：**电压** 按键，短按设置，长按切换**输出脉冲电压**或**输入高压值**；  
-- G：**输出** 按键，按下开始输出所设置的脉冲；  
+**Button function description**  
 
-***其他用法***  
-- A+B： 切换输出脉冲极性为 **正极性** 脉冲（显示POS_┌┐_）  
-- C+B： 切换输出脉冲极性为 **负极性** 脉冲（显示NEG‾└┘‾）  
-  
-***校准高压***  
-进入方法：开机过程中，按住F+B：进入校准模式。  
-  
-默认单点校准，可按D/E/F键，切换校准点数为1/3/5。（V1.2更新）  
-校准时，将屏幕显示的电压调整到与输入电压一致时，保持电压不变，长按**输出**按键（G键），将会保存校准点。  
-保存的校准点数量满足后会自动结束校准，结果显示`DONE`则说明校准成功。显示`FAILED RETRY`说明失败。  
-  
-校准失败可能的原因：  
-- 校准点之间的电压小于100V，比如说点1为100V，点2为150V；  
-- 校准时无输入电压；  
-- 输入的电压与显示电压不相关；  
-  
-## 模式  
-  
-支持三种模式  
-  
-- 一般模式（`NORMAL MODE`）：设置的参数会输出**持续**的脉冲，输出时显示面板的右下角会有灯快速闪烁代表状态；  
-- 持续脉冲模式（`REPEAT BURST`）：设置的参数会以**100CPS**输出；  
-- 单次脉冲模式（`SINGEL BURST`）：设置的参数，每次按下**输出**键，会固定发出**100个脉冲**；  
-  
+- A: **Increment** button. When a digit is selected, pressing it increases the value by +1;  
+- B: **Select / Mode** button. **Short press** switches the selected digit position; **long press** switches the **mode** (see [Modes](#modes));  
+- C: **Decrement** button. When a digit is selected, pressing it decreases the value by −1;  
+- D: **Pulse Width** button. Short press to set, long press to change the multiplier. Range: 500 µS–50 nS, minimum step 50 nS, 4 significant digits;  
+- E: **Frequency** button. Short press to set, long press to change the multiplier. Range: 5 MHz–0.1 Hz, 3 or 4 significant digits;  
+- F: **Voltage** button. Short press to set, long press to switch between **output pulse voltage** and **input high-voltage value**;  
+- G: **Output** button. Press to start outputting the configured pulses;  
 
-## 原理图  
-  
-[原理图](./SCH.pdf)  
-  
-## 实物  
+***Other operations***  
+- A + B: Switch output pulse polarity to **positive polarity** pulses (display shows `POS_┌┐_`)  
+- C + B: Switch output pulse polarity to **negative polarity** pulses (display shows `NEG‾└┘‾`)  
+
+***High-voltage calibration***  
+How to enter: during power-on, hold F + B to enter calibration mode.  
+
+Single-point calibration by default. You can press D / E / F to switch the number of calibration points to 1 / 3 / 5 (updated in V1.2).  
+During calibration, adjust the displayed voltage to match the input voltage. Keep the voltage unchanged, then long-press the **Output** button (G) to save the calibration point.  
+After the required number of calibration points is saved, calibration ends automatically. If the result displays `DONE`, calibration is successful. If `FAILED RETRY` is displayed, calibration has failed.  
+
+Possible reasons for calibration failure:  
+- The voltage difference between calibration points is less than 100 V (for example, point 1 is 100 V and point 2 is 150 V);  
+- No input voltage during calibration;  
+- The input voltage is not correlated with the displayed voltage;  
+
+## Modes  
+
+Three modes are supported:  
+
+- Normal mode (`NORMAL MODE`): the configured parameters output **continuous** pulses. During output, a rapidly blinking indicator appears at the lower-right corner of the display to show status;  
+- Repeat burst mode (`REPEAT BURST`): the configured parameters are output at **100 CPS**;  
+- Single burst mode (`SINGEL BURST`): with the configured parameters, each press of the **Output** button generates exactly **100 pulses**;  
+
+## Schematic  
+
+[Schematic](./SCH.pdf)  
+
+## Hardware  
+
 ![img](./IMG2.jpg)  
-  
