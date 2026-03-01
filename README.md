@@ -57,3 +57,10 @@ Three modes are supported:
 ## Hardware  
 
 ![img](./IMG2.jpg)  
+
+## TEST  
+- Normal mode set 1.67CPS(100KCPM)  
+![img](./IMG100KPM.jpg)  
+  
+- Repeat burst mode (6KCPM)  
+![img](./IMG100CPS.jpg)  

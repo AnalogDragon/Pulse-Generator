@@ -55,4 +55,11 @@
   
 ## 实物  
 ![img](./IMG2.jpg)  
+
+## 测试  
+- 一般模式 设置 1.67CPS(100KCPM)  
+![img](./IMG100KPM.jpg)  
+  
+- 持续脉冲模式 (6KCPM)  
+![img](./IMG100CPS.jpg)  
   
